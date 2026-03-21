@@ -86,6 +86,7 @@ type File struct {
 		SmallModel             string                  `json:"small_model"`
 		Compaction             CompactionConfig        `json:"compaction"`
 		LSP                    LSPConfig               `json:"lsp"`
+		Skills                 SkillsConfig            `json:"skills"`
 	} `json:"x_opencode_go"`
 }
 
@@ -126,6 +127,11 @@ type LSPConfig struct {
 	Servers []LSPServer `json:"servers"`
 }
 
+type SkillsConfig struct {
+	Paths []string `json:"paths"`
+	URLs  []string `json:"urls"`
+}
+
 type Config struct {
 	UpstreamCompatRef      string
 	Listen                 string
@@ -157,6 +163,7 @@ type Config struct {
 	SmallModel             string
 	Compaction             CompactionConfig
 	LSP                    LSPConfig
+	Skills                 SkillsConfig
 }
 
 func Defaults() Config {
@@ -291,6 +298,12 @@ func merge(dst *Config, src File) {
 	}
 	if len(g.LSP.Servers) > 0 {
 		dst.LSP = g.LSP
+	}
+	if len(g.Skills.Paths) > 0 {
+		dst.Skills.Paths = append([]string(nil), g.Skills.Paths...)
+	}
+	if len(g.Skills.URLs) > 0 {
+		dst.Skills.URLs = append([]string(nil), g.Skills.URLs...)
 	}
 }
 

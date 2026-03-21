@@ -135,17 +135,11 @@ func SkillSummary(skills []skill.Skill) string {
 	if len(skills) == 0 {
 		return ""
 	}
-	var sb strings.Builder
-	sb.WriteString("## Available Skills\n\n")
-	for _, s := range skills {
-		fmt.Fprintf(&sb, "- **%s**", s.Name)
-		if s.Description != "" {
-			fmt.Fprintf(&sb, ": %s", s.Description)
-		}
-		sb.WriteString("\n")
-	}
-	sb.WriteString("\nUse the `skill` tool to load full instructions for any skill.\n")
-	return sb.String()
+	return strings.Join([]string{
+		"Skills provide specialized instructions and workflows for specific tasks.",
+		"Use the `skill` tool to load a skill when a task matches its description.",
+		skill.Fmt(skills, true),
+	}, "\n")
 }
 
 type BuildOpts struct {

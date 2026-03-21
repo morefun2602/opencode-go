@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/morefun2602/opencode-go/internal/bus"
@@ -22,6 +23,62 @@ import (
 	"github.com/morefun2602/opencode-go/internal/tool"
 	"github.com/morefun2602/opencode-go/internal/tools"
 )
+
+// BuildSkillSearchPaths constructs the ordered list of directories to search for skills.
+// Exported so the CLI skills list command can use the same logic.
+func BuildSkillSearchPaths(cfg config.Config, log *slog.Logger) []string {
+	var paths []string
+
+	disableExternal := os.Getenv("OPENCODE_DISABLE_EXTERNAL_SKILLS") != ""
+
+	if !disableExternal {
+		if cfg.WorkspaceRoot != "" {
+			paths = append(paths,
+				filepath.Join(cfg.WorkspaceRoot, ".cursor", "skills"),
+				filepath.Join(cfg.WorkspaceRoot, ".agents", "skills"),
+			)
+		}
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			paths = append(paths,
+				filepath.Join(home, ".cursor", "skills"),
+				filepath.Join(home, ".agents", "skills"),
+			)
+		}
+	}
+
+	for _, p := range cfg.Skills.Paths {
+		expanded := p
+		if strings.HasPrefix(expanded, "~/") {
+			home, _ := os.UserHomeDir()
+			if home != "" {
+				expanded = filepath.Join(home, expanded[2:])
+			}
+		}
+		if !filepath.IsAbs(expanded) {
+			expanded = filepath.Join(cfg.WorkspaceRoot, expanded)
+		}
+		if info, err := os.Stat(expanded); err != nil || !info.IsDir() {
+			log.Warn("skill path not found", "path", expanded)
+			continue
+		}
+		paths = append(paths, expanded)
+	}
+
+	for _, u := range cfg.Skills.URLs {
+		disc := skill.NewDiscovery(filepath.Join(cfg.DataDir, "cache"), log)
+		dirs := disc.Pull(u)
+		paths = append(paths, dirs...)
+	}
+
+	dir := cfg.SkillsDir
+	if dir == "" {
+		dir = filepath.Join(cfg.DataDir, "skills")
+	}
+	paths = append(paths, dir)
+
+	return paths
+}
 
 func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Store, error) {
 	if err := plugin.StartAll(context.Background()); err != nil {
@@ -113,29 +170,8 @@ func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Sto
 	route := &tool.Router{Builtin: treg, Clients: mcpClients, Log: log}
 
 	var skills []skill.Skill
-	skillSearchPaths := []string{}
-	if cfg.WorkspaceRoot != "" {
-		skillSearchPaths = append(skillSearchPaths,
-			filepath.Join(cfg.WorkspaceRoot, ".cursor", "skills"),
-			filepath.Join(cfg.WorkspaceRoot, ".agents", "skills"),
-		)
-	}
-	home, _ := os.UserHomeDir()
-	if home != "" {
-		skillSearchPaths = append(skillSearchPaths,
-			filepath.Join(home, ".cursor", "skills"),
-			filepath.Join(home, ".agents", "skills"),
-		)
-	}
-	dir := cfg.SkillsDir
-	if dir == "" {
-		dir = filepath.Join(cfg.DataDir, "skills")
-	}
-	skillSearchPaths = append(skillSearchPaths, dir)
-	skills, _ = skill.DiscoverSkills(skillSearchPaths)
-	if len(skills) == 0 {
-		skills, _ = skill.LoadDir(dir)
-	}
+	skillSearchPaths := BuildSkillSearchPaths(cfg, log)
+	skills, _ = skill.DiscoverSkills(skillSearchPaths, log)
 
 	b := bus.New()
 

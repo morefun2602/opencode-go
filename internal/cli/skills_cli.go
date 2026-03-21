@@ -2,8 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -15,23 +15,32 @@ func newSkillsCmd() *cobra.Command {
 	var configFile string
 	c := &cobra.Command{
 		Use:   "skills",
-		Short: "技能（data_dir/skills 下 *.md）",
+		Short: "技能管理",
 	}
 	list := &cobra.Command{
 		Use:   "list",
-		Short: "列出已发现技能",
+		Short: "列出已发现技能（使用与 Agent 相同的多路径发现逻辑）",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load(configFile, nil)
 			if err != nil {
 				return withCode(2, err)
 			}
-			dir := filepath.Join(cfg.DataDir, "skills")
-			sk, err := skill.LoadDir(dir)
+			log := slog.Default()
+			paths := BuildSkillSearchPaths(cfg, log)
+			sk, err := skill.DiscoverSkills(paths, log)
 			if err != nil {
 				return err
 			}
+			if len(sk) == 0 {
+				fmt.Fprintln(os.Stdout, "No skills found.")
+				return nil
+			}
 			for _, s := range sk {
-				_, _ = fmt.Fprintln(os.Stdout, s.Name)
+				desc := s.Description
+				if desc == "" {
+					desc = "(no description)"
+				}
+				fmt.Fprintf(os.Stdout, "- %s: %s\n", s.Name, desc)
 			}
 			return nil
 		},

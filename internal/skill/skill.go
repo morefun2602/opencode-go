@@ -1,53 +1,27 @@
 package skill
 
 import (
+	"fmt"
+	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// Skill 从目录加载的简易技能块（元数据+正文）。
 type Skill struct {
 	Name        string
 	Description string
 	Body        string
 	Path        string
-}
-
-// LoadDir 读取目录下 `*.md` 为技能正文，文件名为 Name。
-func LoadDir(dir string) ([]Skill, error) {
-	ents, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var out []Skill
-	for _, e := range ents {
-		if e.IsDir() {
-			continue
-		}
-		n := e.Name()
-		if !strings.HasSuffix(strings.ToLower(n), ".md") {
-			continue
-		}
-		p := filepath.Join(dir, n)
-		b, err := os.ReadFile(p)
-		if err != nil {
-			return nil, err
-		}
-		base := strings.TrimSuffix(n, filepath.Ext(n))
-		s := Skill{Name: base, Body: string(b), Path: p}
-		s.Name, s.Description, s.Body = parseFrontmatter(string(b), base)
-		out = append(out, s)
-	}
-	return out, nil
+	Location    string
 }
 
 // DiscoverSkills searches multiple paths for SKILL.md files recursively.
-func DiscoverSkills(searchPaths []string) ([]Skill, error) {
-	seen := map[string]bool{}
+// Only files named SKILL.md (case-insensitive) are matched.
+// Earlier search paths take priority: if a skill name is already seen, duplicates are skipped with a warning.
+func DiscoverSkills(searchPaths []string, log *slog.Logger) ([]Skill, error) {
+	seen := map[string]string{} // skillName -> first seen path
 	var result []Skill
 	for _, base := range searchPaths {
 		err := filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
@@ -57,25 +31,36 @@ func DiscoverSkills(searchPaths []string) ([]Skill, error) {
 			if info.IsDir() {
 				return nil
 			}
-			name := info.Name()
-			if !strings.EqualFold(name, "SKILL.md") && !strings.HasSuffix(strings.ToLower(name), ".md") {
+			if !strings.EqualFold(info.Name(), "SKILL.md") {
 				return nil
 			}
 			b, err := os.ReadFile(path)
 			if err != nil {
 				return nil
 			}
+			absPath, _ := filepath.Abs(path)
+			if absPath == "" {
+				absPath = path
+			}
 			dir := filepath.Base(filepath.Dir(path))
 			skillName, desc, body := parseFrontmatter(string(b), dir)
-			if seen[skillName] {
+			if existing, ok := seen[skillName]; ok {
+				if log != nil {
+					log.Warn("duplicate skill name, using first found",
+						"name", skillName,
+						"existing", existing,
+						"duplicate", absPath,
+					)
+				}
 				return nil
 			}
-			seen[skillName] = true
+			seen[skillName] = absPath
 			result = append(result, Skill{
 				Name:        skillName,
 				Description: desc,
 				Body:        body,
-				Path:        path,
+				Path:        absPath,
+				Location:    absPath,
 			})
 			return nil
 		})
@@ -86,7 +71,6 @@ func DiscoverSkills(searchPaths []string) ([]Skill, error) {
 	return result, nil
 }
 
-// parseFrontmatter extracts YAML frontmatter name/description if present.
 func parseFrontmatter(content, defaultName string) (name, description, body string) {
 	name = defaultName
 	body = content
@@ -117,19 +101,31 @@ func parseFrontmatter(content, defaultName string) (name, description, body stri
 	return
 }
 
-// InjectPrompt 将技能正文拼入系统提示前缀（边界：不修改工具列表，仅文本）。
-func InjectPrompt(base string, skills []Skill) string {
+// Fmt formats a skill list in verbose (XML) or concise (Markdown) mode.
+func Fmt(skills []Skill, verbose bool) string {
 	if len(skills) == 0 {
-		return base
+		return "No skills are currently available."
 	}
-	var sb strings.Builder
-	sb.WriteString(base)
-	sb.WriteString("\n\n## Skills\n")
+	if verbose {
+		var lines []string
+		lines = append(lines, "<available_skills>")
+		for _, s := range skills {
+			loc := (&url.URL{Scheme: "file", Path: s.Location}).String()
+			lines = append(lines,
+				"  <skill>",
+				fmt.Sprintf("    <name>%s</name>", s.Name),
+				fmt.Sprintf("    <description>%s</description>", s.Description),
+				fmt.Sprintf("    <location>%s</location>", loc),
+				"  </skill>",
+			)
+		}
+		lines = append(lines, "</available_skills>")
+		return strings.Join(lines, "\n")
+	}
+	var lines []string
+	lines = append(lines, "## Available Skills")
 	for _, s := range skills {
-		sb.WriteString("\n### ")
-		sb.WriteString(s.Name)
-		sb.WriteString("\n")
-		sb.WriteString(s.Body)
+		lines = append(lines, fmt.Sprintf("- **%s**: %s", s.Name, s.Description))
 	}
-	return sb.String()
+	return strings.Join(lines, "\n")
 }
