@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/morefun2602/opencode-go/internal/llm"
 	"github.com/morefun2602/opencode-go/internal/lsp"
 	"github.com/morefun2602/opencode-go/internal/mcp"
+	"github.com/morefun2602/opencode-go/internal/permission"
 	"github.com/morefun2602/opencode-go/internal/plugin"
 	"github.com/morefun2602/opencode-go/internal/policy"
 	"github.com/morefun2602/opencode-go/internal/runtime"
@@ -199,6 +201,10 @@ func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Sto
 		tool.RegisterLSP(treg, client)
 	}
 
+	registerCustomAgents(cfg, log)
+
+	agentSwitch := runtime.NewAgentSwitch()
+
 	eng := &runtime.Engine{
 		Store:              st,
 		LLM:                prov,
@@ -210,6 +216,7 @@ func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Sto
 		Bus:                b,
 		Skills:             skills,
 		Agent:              runtime.AgentBuild,
+		AgentSwitch:        agentSwitch,
 		MaxToolRounds:      cfg.MaxToolRounds,
 		LLMMaxRetries:      cfg.LLMMaxRetries,
 		CompactionTurns:    cfg.CompactionTurns,
@@ -223,7 +230,95 @@ func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Sto
 		eng.Snapshot = snap
 	}
 
-	tool.RegisterTask(treg, eng, st, cfg.WorkspaceID, 2)
+	planSwitch := &planSwitchAdapter{as: agentSwitch}
+	tool.RegisterPlan(treg, planSwitch)
+
+	tool.RegisterTask(treg, eng, st, cfg.WorkspaceID, 2,
+		func() []tool.SubagentInfo {
+			subs := runtime.ListSubagents()
+			out := make([]tool.SubagentInfo, len(subs))
+			for i, s := range subs {
+				out[i] = tool.SubagentInfo{Name: s.Name, Description: s.Description, CanUse: true}
+			}
+			return out
+		},
+		func(name string) (tool.SubagentInfo, error) {
+			a, ok := runtime.GetAgent(name)
+			if !ok {
+				subs := runtime.ListSubagents()
+				names := make([]string, len(subs))
+				for i, s := range subs {
+					names[i] = s.Name
+				}
+				return tool.SubagentInfo{}, fmt.Errorf("unknown agent %q, available: %s", name, strings.Join(names, ", "))
+			}
+			return tool.SubagentInfo{
+				Name:        a.Name,
+				Description: a.Description,
+				CanUse:      !a.Hidden && a.Subagent,
+			}, nil
+		},
+	)
 
 	return eng, st, nil
+}
+
+// planSwitchAdapter adapts runtime.AgentSwitch to the tool.PlanSwitch interface.
+type planSwitchAdapter struct {
+	as *runtime.AgentSwitch
+}
+
+func (p *planSwitchAdapter) IsInPlan(sessionID string) bool {
+	a, ok := p.as.Get(sessionID)
+	return ok && a.Name == "plan"
+}
+
+func (p *planSwitchAdapter) EnterPlan(sessionID string) {
+	p.as.Set(sessionID, runtime.AgentPlan)
+}
+
+func (p *planSwitchAdapter) ExitPlan(sessionID string) {
+	p.as.Delete(sessionID)
+}
+
+func registerCustomAgents(cfg config.Config, log *slog.Logger) {
+	for _, af := range cfg.Agents {
+		if af.Name == "" {
+			continue
+		}
+		a := runtime.Agent{
+			Name:        af.Name,
+			Description: af.Description,
+			Prompt:      af.Prompt,
+			Model:       af.Model,
+			Steps:       af.Steps,
+			Hidden:      af.Hidden,
+			Subagent:    af.Subagent,
+		}
+
+		mode := runtime.ModeBuild
+		if af.Mode != "" {
+			if m, ok := runtime.GetMode(af.Mode); ok {
+				mode = m
+			}
+		}
+		a.Mode = mode
+
+		if af.Temp > 0 {
+			t := af.Temp
+			a.Temperature = &t
+		}
+
+		if len(af.Tools) > 0 {
+			var rules permission.Ruleset
+			rules = append(rules, permission.Rule{Permission: "*", Pattern: "*", Action: permission.ActionDeny})
+			for _, t := range af.Tools {
+				rules = append(rules, permission.Rule{Permission: t, Pattern: "*", Action: permission.ActionAllow})
+			}
+			a.Permission = rules
+		}
+
+		runtime.RegisterAgent(a)
+		log.Info("registered_custom_agent", "name", af.Name)
+	}
 }

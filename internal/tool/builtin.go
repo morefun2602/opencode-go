@@ -191,7 +191,6 @@ func RegisterBuiltin(reg *tools.Registry, pol *policy.Policy, skills []skill.Ski
 	}
 	registerWebsearch(reg, searchURL, bashSec, maxOut)
 	registerMultiedit(reg, root)
-	registerPlan(reg)
 	registerBatch(reg)
 	registerSkillTool(reg, skills)
 	registerLs(reg, root)

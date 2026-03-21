@@ -23,10 +23,16 @@ type ProviderFile struct {
 }
 
 type AgentFile struct {
-	Name  string   `json:"name"`
-	Tools []string `json:"tools"`
-	Model string   `json:"model"`
-	Temp  float64  `json:"temperature"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Tools       []string `json:"tools"`
+	Model       string   `json:"model"`
+	Temp        float64  `json:"temperature"`
+	Steps       int      `json:"steps"`
+	Prompt      string   `json:"prompt"`
+	Mode        string   `json:"mode"`
+	Hidden      bool     `json:"hidden"`
+	Subagent    bool     `json:"subagent"`
 }
 
 type MCPServerFile struct {

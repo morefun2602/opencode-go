@@ -15,6 +15,7 @@ import (
 	"github.com/morefun2602/opencode-go/internal/bus"
 	"github.com/morefun2602/opencode-go/internal/config"
 	"github.com/morefun2602/opencode-go/internal/llm"
+	"github.com/morefun2602/opencode-go/internal/permission"
 	"github.com/morefun2602/opencode-go/internal/policy"
 	"github.com/morefun2602/opencode-go/internal/prompt"
 	"github.com/morefun2602/opencode-go/internal/skill"
@@ -47,6 +48,7 @@ type Engine struct {
 	Bus                  *bus.Bus
 	Skills               []skill.Skill
 	Agent                Agent
+	AgentSwitch          *AgentSwitch
 	Mode                 Mode
 	MaxToolRounds        int
 	LLMMaxRetries        int
@@ -130,6 +132,9 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 	defer func() {
 		cancel()
 		e.sessions.Delete(sessionID)
+		if e.AgentSwitch != nil {
+			e.AgentSwitch.Delete(sessionID)
+		}
 	}()
 
 	if e.Log != nil {
@@ -141,22 +146,20 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 		return "", err
 	}
 
-	prov, _ := e.resolveProvider()
-	sys := e.buildSystemPrompt(prov)
+	agent := e.activeAgent(ctx, sessionID)
+	prov, _ := e.resolveProviderForAgent(agent)
+	sys := e.buildSystemPromptForAgent(prov, agent)
 	if sys != "" {
 		msgs = append([]llm.Message{{Role: "system", Content: sys}}, msgs...)
 	}
 	msgs = append(msgs, llm.Message{Role: "user", Content: userText})
 
-	tdefs := e.collectTools()
+	tdefs := e.collectToolsForAgent(agent)
 	tdefs = e.maybeInjectNoop(tdefs, msgs)
 	var newMsgs []store.MessageRow
 	newMsgs = append(newMsgs, msgToRow(llm.Message{Role: "user", Content: userText}, nil))
 
-	maxRounds := e.MaxToolRounds
-	if maxRounds <= 0 {
-		maxRounds = 25
-	}
+	maxR := e.maxRounds(agent)
 
 	doomWindow := e.DoomLoopWindow
 	if doomWindow <= 0 {
@@ -164,7 +167,7 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 	}
 	var sigWindow []toolCallSig
 
-	for round := 0; round < maxRounds; round++ {
+	for round := 0; round < maxR; round++ {
 		if ctx.Err() != nil {
 			break
 		}
@@ -178,8 +181,12 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 			_ = e.Snapshot.Track(ctx, sessionID, stepID)
 		}
 
+		agent = e.activeAgent(ctx, sessionID)
+		tdefs = e.collectToolsForAgent(agent)
+		tdefs = e.maybeInjectNoop(tdefs, msgs)
+
 		roundTdefs := tdefs
-		if round == maxRounds-1 {
+		if round == maxR-1 {
 			msgs = append(msgs, llm.Message{Role: "user", Content: maxStepsWarning})
 			roundTdefs = nil
 		}
@@ -345,6 +352,9 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 	defer func() {
 		cancel()
 		e.sessions.Delete(sessionID)
+		if e.AgentSwitch != nil {
+			e.AgentSwitch.Delete(sessionID)
+		}
 	}()
 
 	if e.Log != nil {
@@ -356,22 +366,20 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 		return err
 	}
 
-	prov, _ := e.resolveProvider()
-	sys := e.buildSystemPrompt(prov)
+	agent := e.activeAgent(ctx, sessionID)
+	prov, _ := e.resolveProviderForAgent(agent)
+	sys := e.buildSystemPromptForAgent(prov, agent)
 	if sys != "" {
 		msgs = append([]llm.Message{{Role: "system", Content: sys}}, msgs...)
 	}
 	msgs = append(msgs, llm.Message{Role: "user", Content: userText})
 
-	tdefs := e.collectTools()
+	tdefs := e.collectToolsForAgent(agent)
 	tdefs = e.maybeInjectNoop(tdefs, msgs)
 	var newMsgs []store.MessageRow
 	newMsgs = append(newMsgs, msgToRow(llm.Message{Role: "user", Content: userText}, nil))
 
-	maxRounds := e.MaxToolRounds
-	if maxRounds <= 0 {
-		maxRounds = 25
-	}
+	maxR := e.maxRounds(agent)
 
 	doomWindow := e.DoomLoopWindow
 	if doomWindow <= 0 {
@@ -379,10 +387,14 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 	}
 	var sigWindow []toolCallSig
 
-	for round := 0; round < maxRounds; round++ {
+	for round := 0; round < maxR; round++ {
 		if ctx.Err() != nil {
 			break
 		}
+
+		agent = e.activeAgent(ctx, sessionID)
+		tdefs = e.collectToolsForAgent(agent)
+		tdefs = e.maybeInjectNoop(tdefs, msgs)
 
 		stepID := fmt.Sprintf("step-%d", round)
 		if e.Snapshot != nil {
@@ -390,7 +402,7 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 		}
 
 		roundTdefs := tdefs
-		if round == maxRounds-1 {
+		if round == maxR-1 {
 			msgs = append(msgs, llm.Message{Role: "user", Content: maxStepsWarning})
 			roundTdefs = nil
 		}
@@ -535,6 +547,24 @@ func (e *Engine) executeTool(ctx context.Context, workspaceID, sessionID string,
 			}
 		}
 	}
+
+	agent := e.activeAgent(ctx, sessionID)
+	if len(agent.Permission) > 0 {
+		action := permission.Evaluate(permission.ToolPermissionName(p.ToolName), "*", agent.Permission)
+		if action == permission.ActionDeny {
+			return fmt.Sprintf("tool %q is denied by agent %q permissions", p.ToolName, agent.Name), true
+		}
+		if action == permission.ActionAsk {
+			if e.Confirm != nil {
+				ok, err := e.Confirm(p.ToolName, p.Args)
+				if err != nil || !ok {
+					return fmt.Sprintf("tool %q rejected by user (agent %q requires approval)", p.ToolName, agent.Name), true
+				}
+			} else {
+				return fmt.Sprintf("tool %q requires approval but no confirm handler (agent %q)", p.ToolName, agent.Name), true
+			}
+		}
+	}
 	if e.Log != nil {
 		e.Log.Info("tool_start", "tool", p.ToolName, "session_id", sessionID)
 	}
@@ -665,7 +695,26 @@ func filterCompacted(msgs []llm.Message) []llm.Message {
 	return msgs
 }
 
-func (e *Engine) collectTools() []llm.ToolDef {
+// activeAgent returns the currently effective Agent for the given session.
+// Priority: context override (sub-agent) > AgentSwitch (plan_enter) > Engine.Agent > AgentBuild.
+func (e *Engine) activeAgent(ctx context.Context, sessionID string) Agent {
+	if name, ok := tool.SubagentNameFromContext(ctx); ok {
+		if a, found := GetAgent(name); found {
+			return a
+		}
+	}
+	if e.AgentSwitch != nil {
+		if a, ok := e.AgentSwitch.Get(sessionID); ok {
+			return a
+		}
+	}
+	if e.Agent.Name != "" {
+		return e.Agent
+	}
+	return AgentBuild
+}
+
+func (e *Engine) collectToolsForAgent(agent Agent) []llm.ToolDef {
 	var all []llm.ToolDef
 	if e.Tools != nil && e.Tools.Builtin != nil {
 		for _, t := range e.Tools.Builtin.List() {
@@ -690,11 +739,6 @@ func (e *Engine) collectTools() []llm.ToolDef {
 		}
 	}
 
-	agent := e.Agent
-	if agent.Name == "" {
-		agent = AgentBuild
-		agent.Mode = e.Mode
-	}
 	filtered := ToolFilter(agent, all)
 
 	for i := range filtered {
@@ -702,6 +746,45 @@ func (e *Engine) collectTools() []llm.ToolDef {
 	}
 
 	return filtered
+}
+
+func (e *Engine) resolveProviderForAgent(agent Agent) (llm.Provider, string) {
+	if agent.Model != "" && e.Providers != nil {
+		parts := strings.SplitN(agent.Model, "/", 2)
+		if len(parts) == 2 {
+			if prov, err := e.Providers.Get(parts[0]); err == nil {
+				return prov, parts[1]
+			}
+		}
+	}
+	return e.resolveProvider()
+}
+
+func (e *Engine) maxRounds(agent Agent) int {
+	if agent.Steps > 0 {
+		return agent.Steps
+	}
+	if e.MaxToolRounds > 0 {
+		return e.MaxToolRounds
+	}
+	return 25
+}
+
+func (e *Engine) buildSystemPromptForAgent(prov llm.Provider, agent Agent) string {
+	provType := ""
+	if prov != nil {
+		provType = prov.Name()
+	}
+	agentPrompt := agent.Prompt
+
+	sys := prompt.Build(prompt.BuildOpts{
+		ProviderType:       provType,
+		AgentPrompt:        agentPrompt,
+		WorkspaceRoot:      e.WorkspaceRoot,
+		ConfigInstructions: e.ConfigInstructions,
+		Skills:             e.Skills,
+	})
+	return sys
 }
 
 func hasOverlap(a, b []string) bool {
@@ -736,26 +819,6 @@ func (e *Engine) resolveSmallProvider() (llm.Provider, string) {
 		}
 	}
 	return e.resolveProvider()
-}
-
-func (e *Engine) buildSystemPrompt(prov llm.Provider) string {
-	provType := ""
-	if prov != nil {
-		provType = prov.Name()
-	}
-	agentPrompt := ""
-	if e.Agent.Prompt != "" {
-		agentPrompt = e.Agent.Prompt
-	}
-
-	sys := prompt.Build(prompt.BuildOpts{
-		ProviderType:       provType,
-		AgentPrompt:        agentPrompt,
-		WorkspaceRoot:      e.WorkspaceRoot,
-		ConfigInstructions: e.ConfigInstructions,
-		Skills:             e.Skills,
-	})
-	return sys
 }
 
 func (e *Engine) maybeCompact(ctx context.Context, prov llm.Provider, workspaceID, sessionID string) {

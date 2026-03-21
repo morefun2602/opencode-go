@@ -1,18 +1,21 @@
 package runtime
 
-import "github.com/morefun2602/opencode-go/internal/llm"
-
-type ToolPermission struct {
-	Deny  []string
-	Allow []string
-}
+import (
+	"github.com/morefun2602/opencode-go/internal/llm"
+	"github.com/morefun2602/opencode-go/internal/permission"
+)
 
 type Agent struct {
-	Name            string
-	Prompt          string
-	Mode            Mode
-	Hidden          bool
-	ToolPermissions ToolPermission
+	Name        string
+	Description string
+	Prompt      string
+	Mode        Mode
+	Hidden      bool
+	Subagent    bool
+	Steps       int
+	Model       string
+	Temperature *float64
+	Permission  permission.Ruleset
 }
 
 const promptExplore = `You are an exploration agent. Your job is to find information in the codebase.
@@ -46,63 +49,86 @@ const promptTitle = `Generate a concise title (maximum 50 characters) for the fo
 
 const promptSummary = `Generate a brief summary (2-3 sentences) of what was accomplished in this conversation, similar to a pull request description. Focus on the changes made and their purpose. Return ONLY the summary text.`
 
+var denyAll = permission.Ruleset{
+	{Permission: "*", Pattern: "*", Action: permission.ActionDeny},
+}
+
 var (
 	AgentBuild = Agent{
-		Name: "build",
-		Mode: ModeBuild,
+		Name:        "build",
+		Description: "Default agent with full tool access",
+		Mode:        ModeBuild,
 	}
 
 	AgentPlan = Agent{
-		Name: "plan",
-		Mode: ModePlan,
+		Name:        "plan",
+		Description: "Read-only planning mode, no code changes",
+		Mode:        ModePlan,
+		Permission: permission.Ruleset{
+			{Permission: "edit", Pattern: "*", Action: permission.ActionDeny},
+			{Permission: "bash", Pattern: "*", Action: permission.ActionDeny},
+		},
 	}
 
 	AgentExplore = Agent{
-		Name:   "explore",
-		Prompt: promptExplore,
-		Mode:   ModeExplore,
+		Name:        "explore",
+		Description: "Code exploration agent, read-only with bash",
+		Prompt:      promptExplore,
+		Mode:        ModeExplore,
+		Subagent:    true,
+		Permission: permission.Ruleset{
+			{Permission: "*", Pattern: "*", Action: permission.ActionDeny},
+			{Permission: "read", Pattern: "*", Action: permission.ActionAllow},
+			{Permission: "glob", Pattern: "*", Action: permission.ActionAllow},
+			{Permission: "grep", Pattern: "*", Action: permission.ActionAllow},
+			{Permission: "bash", Pattern: "*", Action: permission.ActionAllow},
+			{Permission: "skill", Pattern: "*", Action: permission.ActionAllow},
+			{Permission: "ls", Pattern: "*", Action: permission.ActionAllow},
+			{Permission: "webfetch", Pattern: "*", Action: permission.ActionAllow},
+			{Permission: "websearch", Pattern: "*", Action: permission.ActionAllow},
+		},
 	}
 
 	AgentGeneral = Agent{
-		Name: "general",
-		Mode: ModeBuild,
-		ToolPermissions: ToolPermission{
-			Deny: []string{"todowrite"},
+		Name:        "general",
+		Description: "General-purpose sub-agent for multi-step tasks",
+		Mode:        ModeBuild,
+		Subagent:    true,
+		Permission: permission.Ruleset{
+			{Permission: "todowrite", Pattern: "*", Action: permission.ActionDeny},
+			{Permission: "todoread", Pattern: "*", Action: permission.ActionDeny},
 		},
 	}
 
 	AgentCompaction = Agent{
-		Name:   "compaction",
-		Prompt: promptCompaction,
-		Mode:   Mode{Name: "compaction"},
-		Hidden: true,
-		ToolPermissions: ToolPermission{
-			Deny: []string{"*"},
-		},
+		Name:        "compaction",
+		Description: "Conversation summarization",
+		Prompt:      promptCompaction,
+		Mode:        Mode{Name: "compaction"},
+		Hidden:      true,
+		Permission:  denyAll,
 	}
 
 	AgentTitle = Agent{
-		Name:   "title",
-		Prompt: promptTitle,
-		Mode:   Mode{Name: "title"},
-		Hidden: true,
-		ToolPermissions: ToolPermission{
-			Deny: []string{"*"},
-		},
+		Name:        "title",
+		Description: "Session title generation",
+		Prompt:      promptTitle,
+		Mode:        Mode{Name: "title"},
+		Hidden:      true,
+		Permission:  denyAll,
 	}
 
 	AgentSummary = Agent{
-		Name:   "summary",
-		Prompt: promptSummary,
-		Mode:   Mode{Name: "summary"},
-		Hidden: true,
-		ToolPermissions: ToolPermission{
-			Deny: []string{"*"},
-		},
+		Name:        "summary",
+		Description: "Session summary generation",
+		Prompt:      promptSummary,
+		Mode:        Mode{Name: "summary"},
+		Hidden:      true,
+		Permission:  denyAll,
 	}
 )
 
-var builtinAgents = map[string]Agent{
+var agentRegistry = map[string]Agent{
 	"build":      AgentBuild,
 	"plan":       AgentPlan,
 	"explore":    AgentExplore,
@@ -112,14 +138,18 @@ var builtinAgents = map[string]Agent{
 	"summary":    AgentSummary,
 }
 
+func RegisterAgent(a Agent) {
+	agentRegistry[a.Name] = a
+}
+
 func GetAgent(name string) (Agent, bool) {
-	a, ok := builtinAgents[name]
+	a, ok := agentRegistry[name]
 	return a, ok
 }
 
 func ListAgents() []Agent {
-	out := make([]Agent, 0, len(builtinAgents))
-	for _, a := range builtinAgents {
+	out := make([]Agent, 0, len(agentRegistry))
+	for _, a := range agentRegistry {
 		if !a.Hidden {
 			out = append(out, a)
 		}
@@ -127,43 +157,47 @@ func ListAgents() []Agent {
 	return out
 }
 
-func ToolFilter(agent Agent, allTools []llm.ToolDef) []llm.ToolDef {
-	perm := agent.ToolPermissions
+// ListSubagents returns agents that can be used via the task tool.
+func ListSubagents() []Agent {
+	out := make([]Agent, 0)
+	for _, a := range agentRegistry {
+		if !a.Hidden && a.Subagent {
+			out = append(out, a)
+		}
+	}
+	return out
+}
 
-	if len(perm.Deny) == 1 && perm.Deny[0] == "*" {
-		return nil
+// ToolFilter returns the subset of allTools that the given agent is allowed to
+// use. When the agent has a Permission Ruleset, it takes precedence. Otherwise
+// the legacy Mode Tags filtering is used as a fallback.
+func ToolFilter(agent Agent, allTools []llm.ToolDef) []llm.ToolDef {
+	if len(agent.Permission) > 0 {
+		names := make([]string, len(allTools))
+		for i, t := range allTools {
+			names[i] = t.Name
+		}
+		disabled := permission.Disabled(names, agent.Permission)
+		var out []llm.ToolDef
+		for _, t := range allTools {
+			if !disabled[t.Name] {
+				out = append(out, t)
+			}
+		}
+		return out
 	}
 
 	modeTags := agent.Mode.Tags
-	denySet := make(map[string]bool, len(perm.Deny))
-	for _, d := range perm.Deny {
-		denySet[d] = true
-	}
-
-	allowSet := make(map[string]bool, len(perm.Allow))
-	for _, a := range perm.Allow {
-		allowSet[a] = true
+	if len(modeTags) == 0 {
+		return allTools
 	}
 
 	var out []llm.ToolDef
 	for _, t := range allTools {
-		if denySet[t.Name] {
+		tags := extractTags(t)
+		if len(tags) > 0 && !hasOverlap(tags, modeTags) {
 			continue
 		}
-
-		if len(allowSet) > 0 {
-			if !allowSet[t.Name] {
-				continue
-			}
-		}
-
-		if len(modeTags) > 0 {
-			tags := extractTags(t)
-			if len(tags) > 0 && !hasOverlap(tags, modeTags) {
-				continue
-			}
-		}
-
 		out = append(out, t)
 	}
 	return out

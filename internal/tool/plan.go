@@ -3,32 +3,20 @@ package tool
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/morefun2602/opencode-go/internal/tools"
 )
 
-// ModeSwitch tracks per-session agent mode for runtime switching.
-type ModeSwitch struct {
-	mu    sync.RWMutex
-	modes map[string]string // sessionID -> mode name
+// PlanSwitch abstracts session-level plan mode switching to avoid importing runtime.
+type PlanSwitch interface {
+	IsInPlan(sessionID string) bool
+	EnterPlan(sessionID string)
+	ExitPlan(sessionID string)
 }
 
-var GlobalModeSwitch = &ModeSwitch{modes: map[string]string{}}
-
-func (ms *ModeSwitch) Get(sessionID string) string {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
-	return ms.modes[sessionID]
-}
-
-func (ms *ModeSwitch) Set(sessionID, mode string) {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
-	ms.modes[sessionID] = mode
-}
-
-func registerPlan(reg *tools.Registry) {
+// RegisterPlan registers plan_enter and plan_exit tools that operate on the
+// given PlanSwitch to toggle between build and plan modes per session.
+func RegisterPlan(reg *tools.Registry, ps PlanSwitch) {
 	reg.Register(tools.Tool{
 		Name:        "plan_enter",
 		Description: "Switch the current session to plan mode (read-only, no code changes)",
@@ -42,11 +30,10 @@ func registerPlan(reg *tools.Registry) {
 			if sessionID == "" {
 				return "", fmt.Errorf("no session context")
 			}
-			current := GlobalModeSwitch.Get(sessionID)
-			if current == "plan" {
+			if ps.IsInPlan(sessionID) {
 				return "already in plan mode", nil
 			}
-			GlobalModeSwitch.Set(sessionID, "plan")
+			ps.EnterPlan(sessionID)
 			return "switched to plan mode", nil
 		},
 	})
@@ -64,8 +51,7 @@ func registerPlan(reg *tools.Registry) {
 			if sessionID == "" {
 				return "", fmt.Errorf("no session context")
 			}
-			current := GlobalModeSwitch.Get(sessionID)
-			if current != "plan" {
+			if !ps.IsInPlan(sessionID) {
 				return "not in plan mode", nil
 			}
 
@@ -79,7 +65,7 @@ func registerPlan(reg *tools.Registry) {
 				return "staying in plan mode", nil
 			}
 
-			GlobalModeSwitch.Set(sessionID, "build")
+			ps.ExitPlan(sessionID)
 			return "switched to build mode", nil
 		},
 	})

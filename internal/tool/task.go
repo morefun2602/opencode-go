@@ -3,6 +3,7 @@ package tool
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/morefun2602/opencode-go/internal/tools"
 )
@@ -18,11 +19,48 @@ type SessionLookup interface {
 	SessionExists(ctx context.Context, workspaceID, sessionID string) (bool, error)
 }
 
-func registerTask(reg *tools.Registry, runner TaskRunner, lookup SessionLookup, workspaceID string, maxDepth int) {
-	if maxDepth <= 0 {
-		maxDepth = 2
-	}
+type subagentKey struct{}
+
+// SubagentNameFromContext returns the subagent name set by the task tool, if any.
+func SubagentNameFromContext(ctx context.Context) (string, bool) {
+	name, ok := ctx.Value(subagentKey{}).(string)
+	return name, ok && name != ""
+}
+
+// SubagentInfo describes a sub-agent available for the task tool.
+type SubagentInfo struct {
+	Name        string
+	Description string
+	CanUse      bool // false for hidden or non-subagent agents
+}
+
+// RegisterTask registers the task (sub-agent) tool. listSubagents provides
+// available sub-agents; validateSubagent checks if a name is valid and usable.
+func RegisterTask(
+	reg *tools.Registry,
+	runner TaskRunner,
+	lookup SessionLookup,
+	workspaceID string,
+	maxDepth int,
+	listSubagents func() []SubagentInfo,
+	validateSubagent func(name string) (SubagentInfo, error),
+) {
 	type depthKey struct{}
+
+	subDesc := func() string {
+		subs := listSubagents()
+		if len(subs) == 0 {
+			return "no subagents available"
+		}
+		names := make([]string, 0, len(subs))
+		for _, s := range subs {
+			if s.CanUse {
+				names = append(names, s.Name)
+			}
+		}
+		return strings.Join(names, ", ")
+	}
+
 	reg.Register(tools.Tool{
 		Name:        "task",
 		Description: "Run a sub-agent to complete a task. Supports resuming previous tasks via task_id.",
@@ -32,7 +70,7 @@ func registerTask(reg *tools.Registry, runner TaskRunner, lookup SessionLookup, 
 			"properties": map[string]any{
 				"prompt":        map[string]any{"type": "string", "description": "task description for the sub-agent"},
 				"task_id":       map[string]any{"type": "string", "description": "optional: resume an existing sub-agent session"},
-				"subagent_type": map[string]any{"type": "string", "description": "optional: agent mode (build, plan, explore)"},
+				"subagent_type": map[string]any{"type": "string", "description": "optional: agent mode — " + subDesc()},
 				"description":   map[string]any{"type": "string", "description": "optional: brief description for tracking"},
 			},
 			"required": []string{"prompt"},
@@ -43,6 +81,19 @@ func registerTask(reg *tools.Registry, runner TaskRunner, lookup SessionLookup, 
 				return "", fmt.Errorf("exceeded max task nesting depth (%d)", maxDepth)
 			}
 			prompt := fmt.Sprint(args["prompt"])
+
+			agentType, _ := args["subagent_type"].(string)
+			agentName := "general"
+			if agentType != "" {
+				info, err := validateSubagent(agentType)
+				if err != nil {
+					return "", err
+				}
+				if !info.CanUse {
+					return "", fmt.Errorf("agent %q cannot be used as subagent", agentType)
+				}
+				agentName = info.Name
+			}
 
 			var sid string
 			taskID, _ := args["task_id"].(string)
@@ -65,6 +116,7 @@ func registerTask(reg *tools.Registry, runner TaskRunner, lookup SessionLookup, 
 			}
 
 			sub := context.WithValue(ctx, depthKey{}, depth+1)
+			sub = context.WithValue(sub, subagentKey{}, agentName)
 			result, err := runner.CompleteTurn(sub, workspaceID, sid, prompt)
 			if err != nil {
 				return "", err
@@ -73,9 +125,4 @@ func registerTask(reg *tools.Registry, runner TaskRunner, lookup SessionLookup, 
 			return fmt.Sprintf("task_id: %s\n%s", sid, result), nil
 		},
 	})
-}
-
-// RegisterTask registers the task (sub-agent) tool. Called separately because it needs an Engine reference.
-func RegisterTask(reg *tools.Registry, runner TaskRunner, lookup SessionLookup, workspaceID string, maxDepth int) {
-	registerTask(reg, runner, lookup, workspaceID, maxDepth)
 }
