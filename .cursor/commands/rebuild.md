@@ -1,0 +1,1 @@
+仔细分析golang版本和原始typescript版本的opencode功能，列出所有缺失的功能实现，并且使用golang实现它。

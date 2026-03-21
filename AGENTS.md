@@ -1,0 +1,3 @@
+此仓库为从opencode完整翻译而来的golang版本，不仅仅是做的代码语句的翻译，考虑可golang的最佳工程实践，目录结构，代码文件拆分等等。此仓库未来用用作企业级Agent应用的的开发框架核心。特别是其对SKills、MCP、ReAct、SubAgent等的能力支持。
+
+使用openai和Anthropic的go版本sdk访问其接口，避免直接使用裸HTTP客户端。仅需支持这俩家就可以。
