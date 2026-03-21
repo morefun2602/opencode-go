@@ -54,8 +54,8 @@ func TestMigrateFromV2AddsPartsColumns(t *testing.T) {
 	if err := st.db.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
 		t.Fatal(err)
 	}
-	if v != 4 {
-		t.Fatalf("want user_version 4, got %d", v)
+	if v != schemaVersion {
+		t.Fatalf("want user_version %d, got %d", schemaVersion, v)
 	}
 
 	var parts string

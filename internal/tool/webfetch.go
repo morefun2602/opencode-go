@@ -11,12 +11,9 @@ import (
 	"github.com/morefun2602/opencode-go/internal/tools"
 )
 
-func registerWebfetch(reg *tools.Registry, timeout int, maxOut int) {
+func registerWebfetch(reg *tools.Registry, timeout int) {
 	if timeout <= 0 {
 		timeout = 30
-	}
-	if maxOut <= 0 {
-		maxOut = 256 * 1024
 	}
 	reg.Register(tools.Tool{
 		Name:        "webfetch",
@@ -45,16 +42,11 @@ func registerWebfetch(reg *tools.Registry, timeout int, maxOut int) {
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 				return "", fmt.Errorf("webfetch: HTTP %d", resp.StatusCode)
 			}
-			limited := io.LimitReader(resp.Body, int64(maxOut)+1)
-			b, err := io.ReadAll(limited)
+			b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 			if err != nil {
 				return "", err
 			}
-			s := string(b)
-			if len(b) > maxOut {
-				s = s[:maxOut] + "\n…truncated"
-			}
-			s = stripHTML(s)
+			s := stripHTML(string(b))
 			return s, nil
 		},
 	})

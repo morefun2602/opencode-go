@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	schemaVersion      = 4
-	maxSchemaSupported = 4
+	schemaVersion      = 5
+	maxSchemaSupported = 5
 )
 
 func migrate(db *sql.DB) error {
@@ -101,6 +101,39 @@ func migrate(db *sql.DB) error {
 			`ALTER TABLE sessions ADD COLUMN parent_message_seq INTEGER DEFAULT 0`,
 		}
 		for _, s := range cols {
+			if _, err := db.Exec(s); err != nil {
+				return err
+			}
+		}
+		if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
+			return err
+		}
+		return nil
+	}
+	if v == 4 {
+		stmts := []string{
+			`CREATE TABLE IF NOT EXISTS revert_backup (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  revert_seq INTEGER NOT NULL,
+  message_id INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  body TEXT NOT NULL,
+  turn_seq INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  message_version INTEGER NOT NULL DEFAULT 1,
+  parts TEXT NOT NULL DEFAULT '[]',
+  model TEXT NOT NULL DEFAULT '',
+  cost_prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_completion_tokens INTEGER NOT NULL DEFAULT 0,
+  finish_reason TEXT NOT NULL DEFAULT '',
+  tool_call_id TEXT NOT NULL DEFAULT '',
+  backup_at INTEGER NOT NULL
+);`,
+			`CREATE INDEX IF NOT EXISTS idx_revert_backup ON revert_backup(session_id, workspace_id);`,
+		}
+		for _, s := range stmts {
 			if _, err := db.Exec(s); err != nil {
 				return err
 			}

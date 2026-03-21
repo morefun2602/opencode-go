@@ -15,7 +15,7 @@ type Router struct {
 	Log     *slog.Logger
 }
 
-// Run 执行工具；未知名返回 *ErrUnknown。
+// Run 执行工具；未知名路由到 invalid 工具。
 func (r *Router) Run(ctx context.Context, corrID, sessionID, name string, args map[string]any) (string, error) {
 	if r.Builtin != nil && r.Builtin.Has(name) {
 		return r.Builtin.Run(ctx, corrID, sessionID, name, args)
@@ -30,6 +30,13 @@ func (r *Router) Run(ctx context.Context, corrID, sessionID, name string, args m
 				return out, err
 			}
 		}
+	}
+
+	if r.Builtin != nil && r.Builtin.Has("invalid") {
+		return r.Builtin.Run(ctx, corrID, sessionID, "invalid", map[string]any{
+			"tool":  name,
+			"error": "unknown tool",
+		})
 	}
 	return "", &ErrUnknown{Name: name}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -57,16 +58,23 @@ func (f *fakeProvider) ChatStream(ctx context.Context, msgs []llm.Message, td []
 
 func TestReActLoopWithToolCalls(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	p := filepath.Join(t.TempDir(), "test.db")
+	tmpDir, err := os.MkdirTemp("", "react-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+	p := filepath.Join(tmpDir, "test.db")
 	st, err := store.Open(p)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
 
-	pol := &policy.Policy{WorkspaceRoot: t.TempDir()}
+	wsDir := filepath.Join(tmpDir, "ws")
+	_ = os.MkdirAll(wsDir, 0o755)
+	pol := &policy.Policy{WorkspaceRoot: wsDir}
 	reg := tools.New(log)
-	tool.RegisterBuiltin(reg, pol)
+	tool.RegisterBuiltin(reg, pol, nil, nil)
 
 	eng := &Engine{
 		Store:         st,

@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/tailscale/hujson"
 )
 
 const DefaultUpstreamCompatRef = "0.0.0-placeholder-sync-with-upstream"
@@ -59,28 +61,69 @@ type File struct {
 		ID string `json:"id"`
 	} `json:"workspace"`
 	Go struct {
-		DataDir                string            `json:"data_dir"`
-		LLMTimeout             string            `json:"llm_timeout"`
-		LLMProvider            string            `json:"llm_provider"`
-		WorkspaceRoot          string            `json:"workspace_root"`
-		RequireWriteConfirm    bool              `json:"require_write_confirm"`
-		BashTimeoutSec         int               `json:"bash_timeout_sec"`
-		MaxOutputBytes         int               `json:"max_output_bytes"`
-		CompactionTurns        int               `json:"compaction_turns"`
-		LLMMaxRetries          int               `json:"llm_max_retries"`
-		StructuredOutputSchema string            `json:"structured_output_schema"`
-		MCPServers             []MCPServerFile   `json:"mcp_servers"`
-		MCPToolPrefix          string            `json:"mcp_tool_prefix"`
+		DataDir                string                  `json:"data_dir"`
+		LLMTimeout             string                  `json:"llm_timeout"`
+		LLMProvider            string                  `json:"llm_provider"`
+		WorkspaceRoot          string                  `json:"workspace_root"`
+		RequireWriteConfirm    bool                    `json:"require_write_confirm"`
+		BashTimeoutSec         int                     `json:"bash_timeout_sec"`
+		MaxOutputBytes         int                     `json:"max_output_bytes"`
+		CompactionTurns        int                     `json:"compaction_turns"`
+		LLMMaxRetries          int                     `json:"llm_max_retries"`
+		StructuredOutputSchema string                  `json:"structured_output_schema"`
+		MCPServers             []MCPServerFile         `json:"mcp_servers"`
+		MCPToolPrefix          string                  `json:"mcp_tool_prefix"`
 		Providers              map[string]ProviderFile `json:"providers"`
-		DefaultProvider        string            `json:"default_provider"`
-		DefaultModel           string            `json:"default_model"`
-		MaxToolRounds          int               `json:"max_tool_rounds"`
-		Permissions            map[string]string `json:"permissions"`
-		SkillsDir              string            `json:"skills_dir"`
-		Agents                 []AgentFile       `json:"agents"`
-		Instructions           []string          `json:"instructions"`
-		RemoteConfigURL        string            `json:"remote_config_url"`
+		DefaultProvider        string                  `json:"default_provider"`
+		DefaultModel           string                  `json:"default_model"`
+		MaxToolRounds          int                     `json:"max_tool_rounds"`
+		Permissions            map[string]string       `json:"permissions"`
+		SkillsDir              string                  `json:"skills_dir"`
+		Agents                 []AgentFile             `json:"agents"`
+		Instructions           []string                `json:"instructions"`
+		RemoteConfigURL        string                  `json:"remote_config_url"`
+		Model                  string                  `json:"model"`
+		SmallModel             string                  `json:"small_model"`
+		Compaction             CompactionConfig        `json:"compaction"`
+		LSP                    LSPConfig               `json:"lsp"`
 	} `json:"x_opencode_go"`
+}
+
+type CompactionConfig struct {
+	Auto     *bool `json:"auto"`
+	Reserved int   `json:"reserved"`
+	Prune    *bool `json:"prune"`
+}
+
+func (c CompactionConfig) AutoEnabled() bool {
+	if c.Auto == nil {
+		return true
+	}
+	return *c.Auto
+}
+
+func (c CompactionConfig) PruneEnabled() bool {
+	if c.Prune == nil {
+		return true
+	}
+	return *c.Prune
+}
+
+func (c CompactionConfig) ReservedTokens() int {
+	if c.Reserved > 0 {
+		return c.Reserved
+	}
+	return 20000
+}
+
+type LSPServer struct {
+	Language string   `json:"language"`
+	Command  string   `json:"command"`
+	Args     []string `json:"args"`
+}
+
+type LSPConfig struct {
+	Servers []LSPServer `json:"servers"`
 }
 
 type Config struct {
@@ -110,6 +153,10 @@ type Config struct {
 	Agents                 []AgentFile
 	Instructions           []string
 	RemoteConfigURL        string
+	Model                  string
+	SmallModel             string
+	Compaction             CompactionConfig
+	LSP                    LSPConfig
 }
 
 func Defaults() Config {
@@ -233,6 +280,18 @@ func merge(dst *Config, src File) {
 	if g.RemoteConfigURL != "" {
 		dst.RemoteConfigURL = g.RemoteConfigURL
 	}
+	if g.Model != "" {
+		dst.Model = g.Model
+	}
+	if g.SmallModel != "" {
+		dst.SmallModel = g.SmallModel
+	}
+	if g.Compaction.Auto != nil || g.Compaction.Reserved > 0 || g.Compaction.Prune != nil {
+		dst.Compaction = g.Compaction
+	}
+	if len(g.LSP.Servers) > 0 {
+		dst.LSP = g.LSP
+	}
 }
 
 func applyEnv(c *Config) {
@@ -295,8 +354,12 @@ func Load(configPath string, flags *Config) (Config, error) {
 			return c, err
 		}
 		if err == nil {
+			standardized, hjErr := hujson.Standardize(b)
+			if hjErr != nil {
+				return c, fmt.Errorf("parse config %s: %w", path, hjErr)
+			}
 			var f File
-			if err := json.Unmarshal(b, &f); err != nil {
+			if err := json.Unmarshal(standardized, &f); err != nil {
 				return c, fmt.Errorf("parse config %s: %w", path, err)
 			}
 			merge(&c, f)

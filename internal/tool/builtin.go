@@ -9,13 +9,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/morefun2602/opencode-go/internal/filewatcher"
 	"github.com/morefun2602/opencode-go/internal/policy"
+	"github.com/morefun2602/opencode-go/internal/skill"
 	"github.com/morefun2602/opencode-go/internal/tools"
 )
 
-// RegisterBuiltin 注册内置工具集（read/write/glob/grep/bash/edit/webfetch）。
+// RegisterBuiltin 注册内置工具集。
 // task 工具需要 Engine 引用，通过 RegisterTask 单独注册。
-func RegisterBuiltin(reg *tools.Registry, pol *policy.Policy) {
+func RegisterBuiltin(reg *tools.Registry, pol *policy.Policy, skills []skill.Skill, watcher *filewatcher.Watcher) {
 	root := "."
 	if pol != nil && pol.WorkspaceRoot != "" {
 		root = pol.WorkspaceRoot
@@ -29,9 +31,18 @@ func RegisterBuiltin(reg *tools.Registry, pol *policy.Policy) {
 		bashSec = pol.BashTimeoutSec
 	}
 	reg.Register(tools.Tool{
-		Name:   "read",
-		Schema: map[string]any{"path": "string"},
-		Tags:   []string{"read"},
+		Name:        "read",
+		Description: "Read file contents with optional offset and limit",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path":   map[string]any{"type": "string", "description": "file path"},
+				"offset": map[string]any{"type": "integer", "description": "start line (1-based, optional)"},
+				"limit":  map[string]any{"type": "integer", "description": "number of lines to read (optional)"},
+			},
+			"required": []string{"path"},
+		},
+		Tags: []string{"read"},
 		Fn: func(ctx context.Context, args map[string]any) (string, error) {
 			p := fmt.Sprint(args["path"])
 			rp, err := ResolveUnder(root, p)
@@ -42,7 +53,38 @@ func RegisterBuiltin(reg *tools.Registry, pol *policy.Policy) {
 			if err != nil {
 				return "", err
 			}
-			return string(b), nil
+			lines := strings.Split(string(b), "\n")
+
+			offset := 0
+			if v, ok := args["offset"]; ok {
+				if f, ok := v.(float64); ok && f > 0 {
+					offset = int(f) - 1
+				}
+			}
+			limit := len(lines)
+			if v, ok := args["limit"]; ok {
+				if f, ok := v.(float64); ok && f > 0 {
+					limit = int(f)
+				}
+			}
+
+			if offset >= len(lines) {
+				return fmt.Sprintf("(file has %d lines, offset %d is beyond end)", len(lines), offset+1), nil
+			}
+			end := offset + limit
+			if end > len(lines) {
+				end = len(lines)
+			}
+			selected := lines[offset:end]
+
+			const maxLineLen = 2000
+			for i, line := range selected {
+				if len(line) > maxLineLen {
+					selected[i] = line[:maxLineLen] + "... (line truncated)"
+				}
+				selected[i] = fmt.Sprintf("%6d|%s", offset+i+1, selected[i])
+			}
+			return strings.Join(selected, "\n"), nil
 		},
 	})
 	reg.Register(tools.Tool{
@@ -69,6 +111,9 @@ func RegisterBuiltin(reg *tools.Registry, pol *policy.Policy) {
 			}
 			if pol != nil {
 				pol.Audit("tool_write", "path", rp)
+			}
+			if watcher != nil {
+				watcher.NotifyChange(rp)
 			}
 			return "ok", nil
 		},
@@ -111,11 +156,7 @@ func RegisterBuiltin(reg *tools.Registry, pol *policy.Policy) {
 					hits = append(hits, fmt.Sprintf("%d:%s", i+1, s))
 				}
 			}
-			out := strings.Join(hits, "\n")
-			if len(out) > maxOut {
-				out = out[:maxOut] + "\n…truncated"
-			}
-			return out, nil
+			return strings.Join(hits, "\n"), nil
 		},
 	})
 	reg.Register(tools.Tool{
@@ -130,9 +171,6 @@ func RegisterBuiltin(reg *tools.Registry, pol *policy.Policy) {
 			cmd.Dir = root
 			out, err := cmd.CombinedOutput()
 			s := string(out)
-			if len(s) > maxOut {
-				s = s[:maxOut] + "\n…truncated"
-			}
 			if err != nil {
 				return s, fmt.Errorf("bash: %w", err)
 			}
@@ -142,21 +180,22 @@ func RegisterBuiltin(reg *tools.Registry, pol *policy.Policy) {
 			return s, nil
 		},
 	})
-	registerEdit(reg, root)
-	registerWebfetch(reg, bashSec, maxOut)
+	registerEdit(reg, root, watcher)
+	registerWebfetch(reg, bashSec)
 	registerTodowrite(reg)
-	registerApplyPatch(reg, root)
+	registerApplyPatch(reg, root, watcher)
 	registerQuestion(reg)
 	searchURL := ""
 	if pol != nil {
 		searchURL = pol.SearchURL
 	}
 	registerWebsearch(reg, searchURL, bashSec, maxOut)
-}
-
-// RegisterTask registers the task (sub-agent) tool. Called separately because it needs an Engine reference.
-func RegisterTask(reg *tools.Registry, runner TaskRunner, workspaceID string, maxDepth int) {
-	registerTask(reg, runner, workspaceID, maxDepth)
+	registerMultiedit(reg, root)
+	registerPlan(reg)
+	registerBatch(reg)
+	registerSkillTool(reg, skills)
+	registerLs(reg, root)
+	registerInvalid(reg)
 }
 
 func argBool(m map[string]any, k string) bool {

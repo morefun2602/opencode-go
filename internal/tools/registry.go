@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+
+	"github.com/morefun2602/opencode-go/internal/truncate"
 )
 
 // Fn 工具实现：args 已由 schema 校验。
@@ -44,6 +46,14 @@ func (r *Registry) Has(name string) bool {
 	return ok
 }
 
+// Get returns a tool by name.
+func (r *Registry) Get(name string) (Tool, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	t, ok := r.tools[name]
+	return t, ok
+}
+
 // List returns all registered tools.
 func (r *Registry) List() []Tool {
 	r.mu.RLock()
@@ -70,5 +80,6 @@ func (r *Registry) Run(ctx context.Context, corrID, sessionID, name string, args
 		}
 		return "", fmt.Errorf("tool %q: %w", name, err)
 	}
-	return out, nil
+	res := truncate.Truncate(out, truncate.DefaultOptions())
+	return res.Output, nil
 }

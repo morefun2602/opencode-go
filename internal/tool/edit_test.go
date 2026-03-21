@@ -19,7 +19,7 @@ func TestEditUniqueMatch(t *testing.T) {
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	reg := tools.New(log)
-	registerEdit(reg, dir)
+	registerEdit(reg, dir, nil)
 	result, err := reg.Run(context.Background(), "", "", "edit", map[string]any{
 		"path": "test.txt", "old_string": "hello", "new_string": "goodbye",
 	})
@@ -41,7 +41,7 @@ func TestEditNotFound(t *testing.T) {
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	reg := tools.New(log)
-	registerEdit(reg, dir)
+	registerEdit(reg, dir, nil)
 	_, err := reg.Run(context.Background(), "", "", "edit", map[string]any{
 		"path": "test.txt", "old_string": "xyz", "new_string": "abc",
 	})
@@ -56,7 +56,7 @@ func TestEditMultipleMatches(t *testing.T) {
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	reg := tools.New(log)
-	registerEdit(reg, dir)
+	registerEdit(reg, dir, nil)
 	_, err := reg.Run(context.Background(), "", "", "edit", map[string]any{
 		"path": "test.txt", "old_string": "aa", "new_string": "bb",
 	})
@@ -71,7 +71,7 @@ func TestEditPathOutside(t *testing.T) {
 	pol := &policy.Policy{WorkspaceRoot: dir}
 	_ = pol
 	reg := tools.New(log)
-	registerEdit(reg, dir)
+	registerEdit(reg, dir, nil)
 	_, err := reg.Run(context.Background(), "", "", "edit", map[string]any{
 		"path": "/etc/passwd", "old_string": "x", "new_string": "y",
 	})

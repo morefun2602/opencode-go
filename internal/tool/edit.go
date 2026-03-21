@@ -6,10 +6,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/morefun2602/opencode-go/internal/filewatcher"
 	"github.com/morefun2602/opencode-go/internal/tools"
 )
 
-func registerEdit(reg *tools.Registry, root string) {
+func registerEdit(reg *tools.Registry, root string, watcher *filewatcher.Watcher) {
 	reg.Register(tools.Tool{
 		Name:        "edit",
 		Description: "Replace a unique occurrence of old_string with new_string in a file",
@@ -46,6 +47,9 @@ func registerEdit(reg *tools.Registry, root string) {
 			result := strings.Replace(content, old, neu, 1)
 			if err := os.WriteFile(rp, []byte(result), 0o644); err != nil {
 				return "", err
+			}
+			if watcher != nil {
+				watcher.NotifyChange(rp)
 			}
 			return "ok", nil
 		},

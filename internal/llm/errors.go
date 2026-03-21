@@ -14,7 +14,18 @@ const (
 	Timeout
 	RateLimit
 	Auth
+	ContextOverflow
 )
+
+// RetryableError wraps an error with retry metadata.
+type RetryableError struct {
+	Err        error
+	Kind       Kind
+	RetryAfter int // seconds, 0 if not specified
+}
+
+func (e *RetryableError) Error() string { return e.Err.Error() }
+func (e *RetryableError) Unwrap() error { return e.Err }
 
 // Classify 将错误映射为 Kind（启发式）。
 func Classify(err error) Kind {
@@ -33,6 +44,11 @@ func Classify(err error) Kind {
 	}
 	if strings.Contains(s, "401") || strings.Contains(s, "403") || strings.Contains(s, "unauthorized") || strings.Contains(s, "auth") {
 		return Auth
+	}
+	if strings.Contains(s, "context_length") || strings.Contains(s, "context window") ||
+		strings.Contains(s, "token limit") || strings.Contains(s, "max_tokens") ||
+		strings.Contains(s, "too many tokens") || strings.Contains(s, "context_too_long") {
+		return ContextOverflow
 	}
 	return Other
 }

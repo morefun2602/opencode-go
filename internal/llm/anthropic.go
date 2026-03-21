@@ -37,6 +37,7 @@ func (a *Anthropic) Models() []string {
 }
 
 func (a *Anthropic) Chat(ctx context.Context, msgs []Message, tools []ToolDef) (*Response, error) {
+	msgs = TransformMessages(msgs, "anthropic")
 	sys, content := a.splitSystem(msgs)
 	params := a.params(sys, content, tools)
 	resp, err := a.client.Messages.New(ctx, params)
@@ -47,6 +48,7 @@ func (a *Anthropic) Chat(ctx context.Context, msgs []Message, tools []ToolDef) (
 }
 
 func (a *Anthropic) ChatStream(ctx context.Context, msgs []Message, tools []ToolDef, chunk func(*Response) error) (*Response, error) {
+	msgs = TransformMessages(msgs, "anthropic")
 	sys, content := a.splitSystem(msgs)
 	params := a.params(sys, content, tools)
 	stream := a.client.Messages.NewStreaming(ctx, params)

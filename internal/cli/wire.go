@@ -3,18 +3,21 @@ package cli
 import (
 	"context"
 	"log/slog"
+	"os"
 	"path/filepath"
-	"strings"
 
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/morefun2602/opencode-go/internal/bus"
 	"github.com/morefun2602/opencode-go/internal/config"
+	"github.com/morefun2602/opencode-go/internal/filewatcher"
 	"github.com/morefun2602/opencode-go/internal/llm"
+	"github.com/morefun2602/opencode-go/internal/lsp"
 	"github.com/morefun2602/opencode-go/internal/mcp"
 	"github.com/morefun2602/opencode-go/internal/plugin"
 	"github.com/morefun2602/opencode-go/internal/policy"
 	"github.com/morefun2602/opencode-go/internal/runtime"
 	"github.com/morefun2602/opencode-go/internal/skill"
+	"github.com/morefun2602/opencode-go/internal/snapshot"
 	"github.com/morefun2602/opencode-go/internal/store"
 	"github.com/morefun2602/opencode-go/internal/tool"
 	"github.com/morefun2602/opencode-go/internal/tools"
@@ -42,13 +45,28 @@ func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Sto
 		registry.Register(n, func() llm.Provider { return p })
 	}
 
-	name := cfg.DefaultProvider
-	if name == "" {
-		name = cfg.LLMProvider
+	defaultModel := cfg.Model
+	if defaultModel == "" && cfg.DefaultModel != "" {
+		defaultModel = cfg.DefaultModel
 	}
+	if defaultModel == "" && cfg.DefaultProvider != "" {
+		defaultModel = cfg.DefaultProvider
+	}
+	router := llm.NewRouter(registry, defaultModel, cfg.SmallModel)
+
 	var prov llm.Provider
-	if name != "" {
-		prov, _ = registry.Get(name)
+	p, _, err := router.ResolveDefault()
+	if err == nil {
+		prov = p
+	}
+	if prov == nil {
+		name := cfg.DefaultProvider
+		if name == "" {
+			name = cfg.LLMProvider
+		}
+		if name != "" {
+			prov, _ = registry.Get(name)
+		}
 	}
 	if prov == nil {
 		prov = llm.Stub{}
@@ -63,7 +81,6 @@ func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Sto
 		Log:                 log,
 	}
 	treg := tools.New(log)
-	tool.RegisterBuiltin(treg, pol)
 
 	var mcpClients []*mcp.Client
 	for _, s := range cfg.MCPServers {
@@ -96,34 +113,81 @@ func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Sto
 	route := &tool.Router{Builtin: treg, Clients: mcpClients, Log: log}
 
 	var skills []skill.Skill
+	skillSearchPaths := []string{}
+	if cfg.WorkspaceRoot != "" {
+		skillSearchPaths = append(skillSearchPaths,
+			filepath.Join(cfg.WorkspaceRoot, ".cursor", "skills"),
+			filepath.Join(cfg.WorkspaceRoot, ".agents", "skills"),
+		)
+	}
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		skillSearchPaths = append(skillSearchPaths,
+			filepath.Join(home, ".cursor", "skills"),
+			filepath.Join(home, ".agents", "skills"),
+		)
+	}
 	dir := cfg.SkillsDir
 	if dir == "" {
 		dir = filepath.Join(cfg.DataDir, "skills")
 	}
-	skills, _ = skill.LoadDir(dir)
-
-	var sysPrompt string
-	if len(cfg.Instructions) > 0 {
-		sysPrompt = strings.Join(cfg.Instructions, "\n") + "\n\n"
+	skillSearchPaths = append(skillSearchPaths, dir)
+	skills, _ = skill.DiscoverSkills(skillSearchPaths)
+	if len(skills) == 0 {
+		skills, _ = skill.LoadDir(dir)
 	}
 
 	b := bus.New()
-	eng := &runtime.Engine{
-		Store:           st,
-		LLM:             prov,
-		Providers:       registry,
-		Tools:           route,
-		Policy:          pol,
-		Log:             log,
-		Bus:             b,
-		Skills:          skills,
-		MaxToolRounds:   cfg.MaxToolRounds,
-		LLMMaxRetries:   cfg.LLMMaxRetries,
-		CompactionTurns: cfg.CompactionTurns,
-		SystemPrompt:    sysPrompt,
+
+	var watcher *filewatcher.Watcher
+	if cfg.WorkspaceRoot != "" {
+		watcher = filewatcher.New(cfg.WorkspaceRoot, b, log)
 	}
 
-	tool.RegisterTask(treg, eng, cfg.WorkspaceID, 2)
+	tool.RegisterBuiltin(treg, pol, skills, watcher)
+
+	var snap *snapshot.Service
+	if cfg.WorkspaceRoot != "" {
+		snap = snapshot.New(cfg.WorkspaceRoot, log)
+		if !snap.Available() {
+			snap = nil
+		}
+	}
+
+	for _, ls := range cfg.LSP.Servers {
+		client, lerr := lsp.NewClient(context.Background(), ls.Command, ls.Args, cfg.WorkspaceRoot, log)
+		if lerr != nil {
+			log.Warn("lsp_start_fail", "language", ls.Language, "err", lerr)
+			continue
+		}
+		tool.RegisterLSP(treg, client)
+	}
+
+	eng := &runtime.Engine{
+		Store:              st,
+		LLM:                prov,
+		Router:             router,
+		Providers:          registry,
+		Tools:              route,
+		Policy:             pol,
+		Log:                log,
+		Bus:                b,
+		Skills:             skills,
+		Agent:              runtime.AgentBuild,
+		MaxToolRounds:      cfg.MaxToolRounds,
+		LLMMaxRetries:      cfg.LLMMaxRetries,
+		CompactionTurns:    cfg.CompactionTurns,
+		WorkspaceRoot:      cfg.WorkspaceRoot,
+		ConfigInstructions: cfg.Instructions,
+		CompactionConfig:   cfg.Compaction,
+		Compaction:         tools.NewCompactor(),
+	}
+
+	if snap != nil {
+		eng.Snapshot = snap
+	}
+
+	tool.RegisterTask(treg, eng, st, cfg.WorkspaceID, 2)
 
 	return eng, st, nil
 }

@@ -2,33 +2,91 @@ package runtime
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 
 	"github.com/morefun2602/opencode-go/internal/bus"
+	"github.com/morefun2602/opencode-go/internal/config"
 	"github.com/morefun2602/opencode-go/internal/llm"
 	"github.com/morefun2602/opencode-go/internal/policy"
+	"github.com/morefun2602/opencode-go/internal/prompt"
 	"github.com/morefun2602/opencode-go/internal/skill"
 	"github.com/morefun2602/opencode-go/internal/store"
 	"github.com/morefun2602/opencode-go/internal/tool"
+	"github.com/morefun2602/opencode-go/internal/tools"
 )
 
 type Engine struct {
-	Store           store.Store
-	LLM             llm.Provider
-	Providers       *llm.Registry
-	Tools           *tool.Router
-	Policy          *policy.Policy
-	Log             *slog.Logger
-	Bus             *bus.Bus
-	Skills          []skill.Skill
-	Mode            Mode
-	MaxToolRounds   int
-	LLMMaxRetries   int
-	CompactionTurns int
-	SystemPrompt    string
-	Confirm         func(name string, args map[string]any) (bool, error)
+	Store              store.Store
+	LLM                llm.Provider
+	Router             *llm.Router
+	Providers          *llm.Registry
+	Tools              *tool.Router
+	Policy             *policy.Policy
+	Log                *slog.Logger
+	Bus                *bus.Bus
+	Skills             []skill.Skill
+	Agent              Agent
+	Mode               Mode
+	MaxToolRounds      int
+	LLMMaxRetries      int
+	CompactionTurns    int
+	SystemPrompt       string
+	WorkspaceRoot      string
+	ConfigInstructions []string
+	CompactionConfig   config.CompactionConfig
+	Confirm            func(name string, args map[string]any) (bool, error)
+	DoomLoopWindow     int
+	Snapshot           SnapshotService
+	Compaction         CompactionService
+}
+
+// SnapshotService is an optional interface for workspace snapshots.
+type SnapshotService interface {
+	Track(ctx context.Context, sessionID, stepID string) error
+	Patch(ctx context.Context, sessionID, stepID string) error
+}
+
+// CompactionService compresses message history when context overflows.
+type CompactionService interface {
+	Process(ctx context.Context, provider llm.Provider, workspaceID, sessionID string, msgs []llm.Message, keepRecent int) ([]llm.Message, error)
+}
+
+// toolCallSig represents a tool call signature for doom loop detection.
+type toolCallSig struct {
+	name     string
+	argsHash string
+}
+
+func computeToolCallSig(name string, args map[string]any) toolCallSig {
+	h := sha256.New()
+	keys := make([]string, 0, len(args))
+	for k := range args {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(h, "%s=%v;", k, args[k])
+	}
+	return toolCallSig{name: name, argsHash: hex.EncodeToString(h.Sum(nil)[:8])}
+}
+
+func isDoomLoop(window []toolCallSig, size int) bool {
+	if len(window) < size {
+		return false
+	}
+	recent := window[len(window)-size:]
+	first := recent[0]
+	for _, s := range recent[1:] {
+		if s.name != first.name || s.argsHash != first.argsHash {
+			return false
+		}
+	}
+	return true
 }
 
 func (e *Engine) CreateSession(ctx context.Context, workspaceID string) (string, error) {
@@ -45,13 +103,14 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 		return "", err
 	}
 
-	sys := skill.InjectPrompt(e.SystemPrompt, e.Skills)
+	prov, _ := e.resolveProvider()
+	sys := e.buildSystemPrompt(prov)
 	if sys != "" {
 		msgs = append([]llm.Message{{Role: "system", Content: sys}}, msgs...)
 	}
 	msgs = append(msgs, llm.Message{Role: "user", Content: userText})
 
-	tools := e.collectTools()
+	tdefs := e.collectTools()
 	var newMsgs []store.MessageRow
 	newMsgs = append(newMsgs, msgToRow(llm.Message{Role: "user", Content: userText}, nil))
 
@@ -60,22 +119,64 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 		maxRounds = 25
 	}
 
+	doomWindow := e.DoomLoopWindow
+	if doomWindow <= 0 {
+		doomWindow = 3
+	}
+	var sigWindow []toolCallSig
+
 	for round := 0; round < maxRounds; round++ {
 		if e.Log != nil {
 			e.Log.Info("react_round", "round", round+1, "session_id", sessionID)
 		}
-		resp, err := e.callWithRetry(ctx, msgs, tools)
+
+		stepID := fmt.Sprintf("step-%d", round)
+		if e.Snapshot != nil {
+			_ = e.Snapshot.Track(ctx, sessionID, stepID)
+		}
+
+		resp, err := e.callWithRetry(ctx, msgs, tdefs)
 		if err != nil {
-			if e.Log != nil {
-				e.Log.Error("turn_fail", "session_id", sessionID, "err", err)
+			if llm.Classify(err) == llm.ContextOverflow && e.Compaction != nil {
+				if e.Log != nil {
+					e.Log.Warn("context_overflow, compacting", "session_id", sessionID)
+				}
+				compacted, cErr := e.Compaction.Process(ctx, prov, workspaceID, sessionID, msgs, 5)
+				if cErr != nil {
+					return "", fmt.Errorf("compaction failed: %w", cErr)
+				}
+				msgs = compacted
+				resp, err = e.callWithRetry(ctx, msgs, tdefs)
+				if err != nil {
+					return "", err
+				}
+			} else {
+				if e.Log != nil {
+					e.Log.Error("turn_fail", "session_id", sessionID, "err", err)
+				}
+				return "", err
 			}
-			return "", err
+		}
+
+		if e.CompactionConfig.AutoEnabled() && e.Compaction != nil {
+			if tools.IsOverflow(resp.Usage, 128000, e.CompactionConfig.ReservedTokens()) {
+				if e.CompactionConfig.PruneEnabled() {
+					msgs = tools.Prune(msgs, 40000)
+				}
+				compacted, cErr := e.Compaction.Process(ctx, prov, workspaceID, sessionID, msgs, 5)
+				if cErr == nil {
+					msgs = compacted
+				}
+			}
 		}
 
 		msgs = append(msgs, resp.Message)
 		newMsgs = append(newMsgs, msgToRow(resp.Message, &resp.Usage))
 
 		if resp.FinishReason != "tool_calls" {
+			if e.Snapshot != nil {
+				_ = e.Snapshot.Patch(ctx, sessionID, stepID)
+			}
 			break
 		}
 
@@ -83,6 +184,40 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 			if p.Type != "tool_call" {
 				continue
 			}
+
+			sig := computeToolCallSig(p.ToolName, p.Args)
+			sigWindow = append(sigWindow, sig)
+			if isDoomLoop(sigWindow, doomWindow) {
+				if e.Log != nil {
+					e.Log.Warn("doom_loop_detected", "tool", p.ToolName, "session_id", sessionID)
+				}
+				if e.Confirm != nil {
+					ok, _ := e.Confirm("__doom_loop__", map[string]any{
+						"tool":  p.ToolName,
+						"count": doomWindow,
+					})
+					if !ok {
+						toolMsg := llm.Message{
+							Role: "tool",
+							Parts: []llm.Part{{
+								Type:       "tool_result",
+								ToolCallID: p.ToolCallID,
+								ToolName:   p.ToolName,
+								Result:     "doom loop detected: same tool call repeated, user chose to stop",
+								IsError:    true,
+							}},
+						}
+						msgs = append(msgs, toolMsg)
+						newMsgs = append(newMsgs, store.MessageRow{
+							Role: "tool", Body: toolMsg.Parts[0].Result,
+							Parts: mustJSON(toolMsg.Parts), ToolCallID: p.ToolCallID,
+						})
+						goto persist
+					}
+					sigWindow = sigWindow[:0]
+				}
+			}
+
 			result, isErr := e.executeTool(ctx, workspaceID, sessionID, p)
 			toolMsg := llm.Message{
 				Role: "tool",
@@ -102,8 +237,13 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 				ToolCallID: p.ToolCallID,
 			})
 		}
+
+		if e.Snapshot != nil {
+			_ = e.Snapshot.Patch(ctx, sessionID, stepID)
+		}
 	}
 
+persist:
 	if err := e.Store.AppendMessages(ctx, workspaceID, sessionID, newMsgs); err != nil {
 		return "", err
 	}
@@ -138,13 +278,14 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 		return err
 	}
 
-	sys := skill.InjectPrompt(e.SystemPrompt, e.Skills)
+	prov, _ := e.resolveProvider()
+	sys := e.buildSystemPrompt(prov)
 	if sys != "" {
 		msgs = append([]llm.Message{{Role: "system", Content: sys}}, msgs...)
 	}
 	msgs = append(msgs, llm.Message{Role: "user", Content: userText})
 
-	tools := e.collectTools()
+	tdefs := e.collectTools()
 	var newMsgs []store.MessageRow
 	newMsgs = append(newMsgs, msgToRow(llm.Message{Role: "user", Content: userText}, nil))
 
@@ -153,21 +294,52 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 		maxRounds = 25
 	}
 
+	doomWindow := e.DoomLoopWindow
+	if doomWindow <= 0 {
+		doomWindow = 3
+	}
+	var sigWindow []toolCallSig
+
 	for round := 0; round < maxRounds; round++ {
-		resp, err := e.LLM.ChatStream(ctx, msgs, tools, func(partial *llm.Response) error {
+		stepID := fmt.Sprintf("step-%d", round)
+		if e.Snapshot != nil {
+			_ = e.Snapshot.Track(ctx, sessionID, stepID)
+		}
+
+		resp, err := prov.ChatStream(ctx, msgs, tdefs, func(partial *llm.Response) error {
 			if partial.Message.Content != "" {
 				return chunk(partial.Message.Content)
 			}
 			return nil
 		})
 		if err != nil {
-			return err
+			if llm.Classify(err) == llm.ContextOverflow && e.Compaction != nil {
+				compacted, cErr := e.Compaction.Process(ctx, prov, workspaceID, sessionID, msgs, 5)
+				if cErr != nil {
+					return fmt.Errorf("compaction failed: %w", cErr)
+				}
+				msgs = compacted
+				resp, err = prov.ChatStream(ctx, msgs, tdefs, func(partial *llm.Response) error {
+					if partial.Message.Content != "" {
+						return chunk(partial.Message.Content)
+					}
+					return nil
+				})
+				if err != nil {
+					return err
+				}
+			} else {
+				return err
+			}
 		}
 
 		msgs = append(msgs, resp.Message)
 		newMsgs = append(newMsgs, msgToRow(resp.Message, &resp.Usage))
 
 		if resp.FinishReason != "tool_calls" {
+			if e.Snapshot != nil {
+				_ = e.Snapshot.Patch(ctx, sessionID, stepID)
+			}
 			break
 		}
 
@@ -175,6 +347,37 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 			if p.Type != "tool_call" {
 				continue
 			}
+
+			sig := computeToolCallSig(p.ToolName, p.Args)
+			sigWindow = append(sigWindow, sig)
+			if isDoomLoop(sigWindow, doomWindow) {
+				if e.Confirm != nil {
+					ok, _ := e.Confirm("__doom_loop__", map[string]any{
+						"tool":  p.ToolName,
+						"count": doomWindow,
+					})
+					if !ok {
+						toolMsg := llm.Message{
+							Role: "tool",
+							Parts: []llm.Part{{
+								Type:       "tool_result",
+								ToolCallID: p.ToolCallID,
+								ToolName:   p.ToolName,
+								Result:     "doom loop detected: same tool call repeated, user chose to stop",
+								IsError:    true,
+							}},
+						}
+						msgs = append(msgs, toolMsg)
+						newMsgs = append(newMsgs, store.MessageRow{
+							Role: "tool", Body: toolMsg.Parts[0].Result,
+							Parts: mustJSON(toolMsg.Parts), ToolCallID: p.ToolCallID,
+						})
+						goto persistStream
+					}
+					sigWindow = sigWindow[:0]
+				}
+			}
+
 			result, isErr := e.executeTool(ctx, workspaceID, sessionID, p)
 			toolMsg := llm.Message{
 				Role: "tool",
@@ -194,8 +397,13 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 				ToolCallID: p.ToolCallID,
 			})
 		}
+
+		if e.Snapshot != nil {
+			_ = e.Snapshot.Patch(ctx, sessionID, stepID)
+		}
 	}
 
+persistStream:
 	if err := e.Store.AppendMessages(ctx, workspaceID, sessionID, newMsgs); err != nil {
 		return err
 	}
@@ -245,14 +453,15 @@ func (e *Engine) executeTool(ctx context.Context, workspaceID, sessionID string,
 	return out, false
 }
 
-func (e *Engine) callWithRetry(ctx context.Context, msgs []llm.Message, tools []llm.ToolDef) (*llm.Response, error) {
+func (e *Engine) callWithRetry(ctx context.Context, msgs []llm.Message, tdefs []llm.ToolDef) (*llm.Response, error) {
+	prov, _ := e.resolveProvider()
 	attempts := e.LLMMaxRetries + 1
 	if attempts < 1 {
 		attempts = 1
 	}
 	var last error
 	for i := 0; i < attempts; i++ {
-		resp, err := e.LLM.Chat(ctx, msgs, tools)
+		resp, err := prov.Chat(ctx, msgs, tdefs)
 		if err == nil {
 			return resp, nil
 		}
@@ -288,24 +497,42 @@ func (e *Engine) loadHistory(ctx context.Context, workspaceID, sessionID string)
 }
 
 func (e *Engine) collectTools() []llm.ToolDef {
-	var out []llm.ToolDef
-	allowed := e.Mode.Tags
+	var all []llm.ToolDef
 	if e.Tools != nil && e.Tools.Builtin != nil {
 		for _, t := range e.Tools.Builtin.List() {
-			if len(allowed) > 0 && !hasOverlap(t.Tags, allowed) {
+			if t.Name == "invalid" {
 				continue
 			}
-			out = append(out, llm.ToolDef{Name: t.Name, Description: t.Description, Parameters: t.Schema})
+			td := llm.ToolDef{Name: t.Name, Description: t.Description, Parameters: t.Schema}
+			if len(t.Tags) > 0 {
+				if td.Parameters == nil {
+					td.Parameters = map[string]any{}
+				}
+				td.Parameters["_tags"] = t.Tags
+			}
+			all = append(all, td)
 		}
 	}
 	if e.Tools != nil {
 		for _, c := range e.Tools.Clients {
 			for _, t := range c.ListTools() {
-				out = append(out, llm.ToolDef{Name: t.Name, Description: t.Description, Parameters: t.Schema})
+				all = append(all, llm.ToolDef{Name: t.Name, Description: t.Description, Parameters: t.Schema})
 			}
 		}
 	}
-	return out
+
+	agent := e.Agent
+	if agent.Name == "" {
+		agent = AgentBuild
+		agent.Mode = e.Mode
+	}
+	filtered := ToolFilter(agent, all)
+
+	for i := range filtered {
+		delete(filtered[i].Parameters, "_tags")
+	}
+
+	return filtered
 }
 
 func hasOverlap(a, b []string) bool {
@@ -317,6 +544,49 @@ func hasOverlap(a, b []string) bool {
 		}
 	}
 	return false
+}
+
+func (e *Engine) resolveProvider() (llm.Provider, string) {
+	if e.Router != nil {
+		prov, model, err := e.Router.ResolveDefault()
+		if err == nil {
+			return prov, model
+		}
+	}
+	if e.LLM != nil {
+		return e.LLM, ""
+	}
+	return llm.Stub{}, ""
+}
+
+func (e *Engine) resolveSmallProvider() (llm.Provider, string) {
+	if e.Router != nil {
+		prov, model, err := e.Router.ResolveSmall()
+		if err == nil {
+			return prov, model
+		}
+	}
+	return e.resolveProvider()
+}
+
+func (e *Engine) buildSystemPrompt(prov llm.Provider) string {
+	provType := ""
+	if prov != nil {
+		provType = prov.Name()
+	}
+	agentPrompt := ""
+	if e.Agent.Prompt != "" {
+		agentPrompt = e.Agent.Prompt
+	}
+
+	sys := prompt.Build(prompt.BuildOpts{
+		ProviderType:       provType,
+		AgentPrompt:        agentPrompt,
+		WorkspaceRoot:      e.WorkspaceRoot,
+		ConfigInstructions: e.ConfigInstructions,
+		Skills:             e.Skills,
+	})
+	return sys
 }
 
 func (e *Engine) maybeCompact(ctx context.Context, workspaceID, sessionID string) {
@@ -353,7 +623,8 @@ func mustJSON(v any) string {
 }
 
 func (e *Engine) maybeAutoTitle(ctx context.Context, workspaceID, sessionID, userText string) {
-	if e.LLM == nil {
+	prov, _ := e.resolveSmallProvider()
+	if prov == nil {
 		return
 	}
 	msgs, err := e.Store.ListMessages(ctx, workspaceID, sessionID, 0, 10)
@@ -361,11 +632,11 @@ func (e *Engine) maybeAutoTitle(ctx context.Context, workspaceID, sessionID, use
 		return
 	}
 	go func() {
-		prompt := []llm.Message{
-			{Role: "system", Content: "Generate a concise title (max 6 words) for a conversation that starts with the following message. Return only the title text, nothing else."},
+		titleMsgs := []llm.Message{
+			{Role: "system", Content: AgentTitle.Prompt},
 			{Role: "user", Content: userText},
 		}
-		resp, err := e.LLM.Chat(context.Background(), prompt, nil)
+		resp, err := prov.Chat(context.Background(), titleMsgs, nil)
 		if err != nil {
 			return
 		}

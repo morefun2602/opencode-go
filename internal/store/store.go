@@ -41,6 +41,7 @@ type Store interface {
 	SessionExists(ctx context.Context, workspaceID, sessionID string) (bool, error)
 	Fork(ctx context.Context, workspaceID, sessionID string, seq int) (string, error)
 	Revert(ctx context.Context, workspaceID, sessionID string, seq int) error
+	Unrevert(ctx context.Context, workspaceID, sessionID string) error
 	SetTitle(ctx context.Context, workspaceID, sessionID, title string) error
 	SetArchived(ctx context.Context, workspaceID, sessionID string, archived bool) error
 	Usage(ctx context.Context, workspaceID, sessionID string) (prompt int, completion int, err error)

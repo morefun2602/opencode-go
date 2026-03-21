@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -159,10 +160,60 @@ FROM messages WHERE session_id=? AND workspace_id=? AND turn_seq<=?`,
 }
 
 func (s *SQLite) Revert(ctx context.Context, workspaceID, sessionID string, seq int) error {
-	_, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	now := time.Now().Unix()
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO revert_backup(workspace_id, session_id, revert_seq, message_id, role, body, turn_seq, created_at, message_version, parts, model, cost_prompt_tokens, cost_completion_tokens, finish_reason, tool_call_id, backup_at)
+SELECT workspace_id, session_id, ?, id, role, body, turn_seq, created_at, message_version, parts, model, cost_prompt_tokens, cost_completion_tokens, finish_reason, tool_call_id, ?
+FROM messages WHERE session_id=? AND workspace_id=? AND turn_seq>?`,
+		seq, now, sessionID, workspaceID, seq); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM messages WHERE session_id=? AND workspace_id=? AND turn_seq>?`,
-		sessionID, workspaceID, seq)
-	return err
+		sessionID, workspaceID, seq); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *SQLite) Unrevert(ctx context.Context, workspaceID, sessionID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var maxBackupAt int64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(backup_at), 0) FROM revert_backup WHERE session_id=? AND workspace_id=?`,
+		sessionID, workspaceID).Scan(&maxBackupAt); err != nil {
+		return err
+	}
+	if maxBackupAt == 0 {
+		return fmt.Errorf("no revert to undo")
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO messages(workspace_id, session_id, role, body, turn_seq, created_at, message_version, parts, model, cost_prompt_tokens, cost_completion_tokens, finish_reason, tool_call_id)
+SELECT workspace_id, session_id, role, body, turn_seq, created_at, message_version, parts, model, cost_prompt_tokens, cost_completion_tokens, finish_reason, tool_call_id
+FROM revert_backup WHERE session_id=? AND workspace_id=? AND backup_at=? ORDER BY turn_seq`,
+		sessionID, workspaceID, maxBackupAt); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM revert_backup WHERE session_id=? AND workspace_id=? AND backup_at=?`,
+		sessionID, workspaceID, maxBackupAt); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLite) SetTitle(ctx context.Context, workspaceID, sessionID, title string) error {
