@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/morefun2602/opencode-go/internal/llm"
 	"github.com/morefun2602/opencode-go/internal/policy"
@@ -180,4 +181,217 @@ func (a *alwaysToolCallProvider) ChatStream(ctx context.Context, msgs []llm.Mess
 	r, _ := a.Chat(ctx, msgs, td)
 	_ = chunk(r)
 	return r, nil
+}
+
+func TestFilterCompacted(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "hi"},
+		{Role: "user", Content: "[Conversation Summary] old chat summary"},
+		{Role: "assistant", Content: "continuing"},
+		{Role: "user", Content: "new question"},
+	}
+	result := filterCompacted(msgs)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 messages after filterCompacted, got %d", len(result))
+	}
+	if result[0].Content != "[Conversation Summary] old chat summary" {
+		t.Fatalf("first message should be compaction summary, got %q", result[0].Content)
+	}
+}
+
+func TestFilterCompactedNoSummary(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "hi"},
+	}
+	result := filterCompacted(msgs)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages (unchanged), got %d", len(result))
+	}
+}
+
+func TestMaxStepsWarningInjection(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	p := filepath.Join(t.TempDir(), "test.db")
+	st, err := store.Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	callCount := 0
+	lastTdefs := []llm.ToolDef{}
+	lastMsgs := []llm.Message{}
+	trackingProv := &trackingProvider{
+		onChat: func(ctx context.Context, msgs []llm.Message, td []llm.ToolDef) (*llm.Response, error) {
+			callCount++
+			lastTdefs = td
+			lastMsgs = msgs
+			if callCount < 2 {
+				return &llm.Response{
+					Message: llm.Message{
+						Role: "assistant",
+						Parts: []llm.Part{{
+							Type: "tool_call", ToolCallID: "tc", ToolName: "echo", Args: map[string]any{},
+						}},
+					},
+					FinishReason: "tool_calls",
+					Model:        "track",
+				}, nil
+			}
+			return &llm.Response{
+				Message:      llm.Message{Role: "assistant", Content: "final summary"},
+				FinishReason: "stop",
+				Model:        "track",
+			}, nil
+		},
+	}
+
+	reg := tools.New(log)
+	reg.Register(tools.Tool{
+		Name: "echo",
+		Fn:   func(ctx context.Context, args map[string]any) (string, error) { return "ok", nil },
+	})
+
+	eng := &Engine{
+		Store:         st,
+		LLM:           trackingProv,
+		Tools:         &tool.Router{Builtin: reg, Log: log},
+		Log:           log,
+		MaxToolRounds: 2,
+	}
+
+	ctx := context.Background()
+	sid, _ := st.CreateSession(ctx, "ws")
+	reply, err := eng.CompleteTurn(ctx, "ws", sid, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply != "final summary" {
+		t.Fatalf("expected 'final summary', got %q", reply)
+	}
+
+	if len(lastTdefs) != 0 {
+		t.Fatalf("expected empty tool defs on last round, got %d", len(lastTdefs))
+	}
+	found := false
+	for _, m := range lastMsgs {
+		if m.Role == "user" && m.Content == maxStepsWarning {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected MAX_STEPS warning message in last round messages")
+	}
+}
+
+type trackingProvider struct {
+	onChat func(ctx context.Context, msgs []llm.Message, td []llm.ToolDef) (*llm.Response, error)
+}
+
+func (tp *trackingProvider) Name() string    { return "tracking" }
+func (tp *trackingProvider) Models() []string { return []string{"tracking"} }
+
+func (tp *trackingProvider) Chat(ctx context.Context, msgs []llm.Message, td []llm.ToolDef) (*llm.Response, error) {
+	return tp.onChat(ctx, msgs, td)
+}
+
+func (tp *trackingProvider) ChatStream(ctx context.Context, msgs []llm.Message, td []llm.ToolDef, chunk func(*llm.Response) error) (*llm.Response, error) {
+	r, err := tp.onChat(ctx, msgs, td)
+	if err != nil {
+		return nil, err
+	}
+	_ = chunk(r)
+	return r, nil
+}
+
+func TestCancelSession(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	p := filepath.Join(t.TempDir(), "test.db")
+	st, err := store.Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	started := make(chan struct{})
+	slowProv := &trackingProvider{
+		onChat: func(ctx context.Context, msgs []llm.Message, td []llm.ToolDef) (*llm.Response, error) {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(10 * time.Second):
+				return &llm.Response{
+					Message:      llm.Message{Role: "assistant", Content: "done"},
+					FinishReason: "stop",
+				}, nil
+			}
+		},
+	}
+
+	eng := &Engine{
+		Store:         st,
+		LLM:           slowProv,
+		Tools:         &tool.Router{Builtin: tools.New(log), Log: log},
+		Log:           log,
+		MaxToolRounds: 5,
+	}
+
+	ctx := context.Background()
+	sid, _ := st.CreateSession(ctx, "ws")
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := eng.CompleteTurn(ctx, "ws", sid, "test cancel")
+		done <- err
+	}()
+
+	<-started
+	eng.CancelSession(sid)
+
+	select {
+	case err := <-done:
+		if err == nil || err != context.Canceled {
+			t.Logf("got error: %v (expected context.Canceled or similar)", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("CompleteTurn did not terminate after CancelSession")
+	}
+}
+
+func TestNoopToolInjection(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "assistant", Parts: []llm.Part{{Type: "tool_call", ToolName: "read"}}},
+		{Role: "tool", Parts: []llm.Part{{Type: "tool_result", ToolName: "read", Result: "content"}}},
+	}
+
+	eng := &Engine{}
+	result := eng.maybeInjectNoop(nil, msgs)
+	if len(result) != 1 || result[0].Name != "_noop" {
+		t.Fatalf("expected _noop injection, got %v", result)
+	}
+
+	result2 := eng.maybeInjectNoop([]llm.ToolDef{{Name: "read"}}, msgs)
+	if len(result2) != 1 || result2[0].Name != "read" {
+		t.Fatalf("should not inject noop when tools exist, got %v", result2)
+	}
+}
+
+func TestNoopToolInjectionNoToolCalls(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "hi"},
+	}
+
+	eng := &Engine{}
+	result := eng.maybeInjectNoop(nil, msgs)
+	if len(result) != 0 {
+		t.Fatalf("should not inject noop when no tool_call in history, got %v", result)
+	}
 }

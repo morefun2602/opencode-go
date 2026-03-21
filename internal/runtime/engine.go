@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/morefun2602/opencode-go/internal/bus"
 	"github.com/morefun2602/opencode-go/internal/config"
@@ -20,29 +23,45 @@ import (
 	"github.com/morefun2602/opencode-go/internal/tools"
 )
 
+const maxStepsWarning = `You are about to reach the maximum number of tool call steps allowed. Please wrap up your current work:
+1. Summarize what you have accomplished so far
+2. List any remaining tasks
+3. Provide your final response
+
+Do NOT make any more tool calls.`
+
+var noopToolDef = llm.ToolDef{
+	Name:        "_noop",
+	Description: "A no-operation placeholder tool. Call this if no other tool is appropriate.",
+	Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+}
+
 type Engine struct {
-	Store              store.Store
-	LLM                llm.Provider
-	Router             *llm.Router
-	Providers          *llm.Registry
-	Tools              *tool.Router
-	Policy             *policy.Policy
-	Log                *slog.Logger
-	Bus                *bus.Bus
-	Skills             []skill.Skill
-	Agent              Agent
-	Mode               Mode
-	MaxToolRounds      int
-	LLMMaxRetries      int
-	CompactionTurns    int
-	SystemPrompt       string
-	WorkspaceRoot      string
-	ConfigInstructions []string
-	CompactionConfig   config.CompactionConfig
-	Confirm            func(name string, args map[string]any) (bool, error)
-	DoomLoopWindow     int
-	Snapshot           SnapshotService
-	Compaction         CompactionService
+	Store                store.Store
+	LLM                  llm.Provider
+	Router               *llm.Router
+	Providers            *llm.Registry
+	Tools                *tool.Router
+	Policy               *policy.Policy
+	Log                  *slog.Logger
+	Bus                  *bus.Bus
+	Skills               []skill.Skill
+	Agent                Agent
+	Mode                 Mode
+	MaxToolRounds        int
+	LLMMaxRetries        int
+	CompactionTurns      int
+	SystemPrompt         string
+	WorkspaceRoot        string
+	ConfigInstructions   []string
+	CompactionConfig     config.CompactionConfig
+	Confirm              func(name string, args map[string]any) (bool, error)
+	DoomLoopWindow       int
+	Snapshot             SnapshotService
+	Compaction           CompactionService
+	StructuredOutputSchema map[string]any
+
+	sessions sync.Map // sessionID → context.CancelFunc
 }
 
 // SnapshotService is an optional interface for workspace snapshots.
@@ -93,7 +112,26 @@ func (e *Engine) CreateSession(ctx context.Context, workspaceID string) (string,
 	return e.Store.CreateSession(ctx, workspaceID)
 }
 
+// CancelSession cancels a running session by calling its cancel func.
+func (e *Engine) CancelSession(sessionID string) {
+	if v, ok := e.sessions.LoadAndDelete(sessionID); ok {
+		if cancel, ok := v.(context.CancelFunc); ok {
+			cancel()
+		}
+	}
+	if e.Bus != nil {
+		e.Bus.Publish("session.abort", map[string]any{"session_id": sessionID})
+	}
+}
+
 func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userText string) (string, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	e.sessions.Store(sessionID, cancel)
+	defer func() {
+		cancel()
+		e.sessions.Delete(sessionID)
+	}()
+
 	if e.Log != nil {
 		e.Log.Info("turn_start", "session_id", sessionID, "workspace_id", workspaceID)
 	}
@@ -111,6 +149,7 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 	msgs = append(msgs, llm.Message{Role: "user", Content: userText})
 
 	tdefs := e.collectTools()
+	tdefs = e.maybeInjectNoop(tdefs, msgs)
 	var newMsgs []store.MessageRow
 	newMsgs = append(newMsgs, msgToRow(llm.Message{Role: "user", Content: userText}, nil))
 
@@ -126,6 +165,10 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 	var sigWindow []toolCallSig
 
 	for round := 0; round < maxRounds; round++ {
+		if ctx.Err() != nil {
+			break
+		}
+
 		if e.Log != nil {
 			e.Log.Info("react_round", "round", round+1, "session_id", sessionID)
 		}
@@ -135,7 +178,13 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 			_ = e.Snapshot.Track(ctx, sessionID, stepID)
 		}
 
-		resp, err := e.callWithRetry(ctx, msgs, tdefs)
+		roundTdefs := tdefs
+		if round == maxRounds-1 {
+			msgs = append(msgs, llm.Message{Role: "user", Content: maxStepsWarning})
+			roundTdefs = nil
+		}
+
+		resp, err := e.callWithRetry(ctx, sessionID, msgs, roundTdefs)
 		if err != nil {
 			if llm.Classify(err) == llm.ContextOverflow && e.Compaction != nil {
 				if e.Log != nil {
@@ -146,7 +195,7 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 					return "", fmt.Errorf("compaction failed: %w", cErr)
 				}
 				msgs = compacted
-				resp, err = e.callWithRetry(ctx, msgs, tdefs)
+				resp, err = e.callWithRetry(ctx, sessionID, msgs, roundTdefs)
 				if err != nil {
 					return "", err
 				}
@@ -182,6 +231,20 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 
 		for _, p := range resp.Message.Parts {
 			if p.Type != "tool_call" {
+				continue
+			}
+
+			if p.ToolName == "_noop" {
+				toolMsg := llm.Message{
+					Role: "tool",
+					Parts: []llm.Part{{
+						Type: "tool_result", ToolCallID: p.ToolCallID, ToolName: p.ToolName, Result: "noop",
+					}},
+				}
+				msgs = append(msgs, toolMsg)
+				newMsgs = append(newMsgs, store.MessageRow{
+					Role: "tool", Body: "noop", Parts: mustJSON(toolMsg.Parts), ToolCallID: p.ToolCallID,
+				})
 				continue
 			}
 
@@ -244,6 +307,14 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 	}
 
 persist:
+	if len(e.StructuredOutputSchema) > 0 && ctx.Err() == nil {
+		soResult, soMsgs := e.requestStructuredOutput(ctx, sessionID, msgs)
+		if soResult != "" {
+			newMsgs = append(newMsgs, soMsgs...)
+			msgs = append(msgs, soMsgs2LLMMessages(soMsgs)...)
+		}
+	}
+
 	if err := e.Store.AppendMessages(ctx, workspaceID, sessionID, newMsgs); err != nil {
 		return "", err
 	}
@@ -251,7 +322,7 @@ persist:
 		e.Bus.Publish("message.created", map[string]any{"session_id": sessionID})
 	}
 
-	e.maybeCompact(ctx, workspaceID, sessionID)
+	e.maybeCompact(ctx, prov, workspaceID, sessionID)
 
 	if e.Log != nil {
 		e.Log.Info("turn_complete", "session_id", sessionID)
@@ -269,6 +340,13 @@ persist:
 }
 
 func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID, userText string, chunk func(string) error) error {
+	ctx, cancel := context.WithCancel(ctx)
+	e.sessions.Store(sessionID, cancel)
+	defer func() {
+		cancel()
+		e.sessions.Delete(sessionID)
+	}()
+
 	if e.Log != nil {
 		e.Log.Info("turn_start", "session_id", sessionID, "workspace_id", workspaceID)
 	}
@@ -286,6 +364,7 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 	msgs = append(msgs, llm.Message{Role: "user", Content: userText})
 
 	tdefs := e.collectTools()
+	tdefs = e.maybeInjectNoop(tdefs, msgs)
 	var newMsgs []store.MessageRow
 	newMsgs = append(newMsgs, msgToRow(llm.Message{Role: "user", Content: userText}, nil))
 
@@ -301,17 +380,22 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 	var sigWindow []toolCallSig
 
 	for round := 0; round < maxRounds; round++ {
+		if ctx.Err() != nil {
+			break
+		}
+
 		stepID := fmt.Sprintf("step-%d", round)
 		if e.Snapshot != nil {
 			_ = e.Snapshot.Track(ctx, sessionID, stepID)
 		}
 
-		resp, err := prov.ChatStream(ctx, msgs, tdefs, func(partial *llm.Response) error {
-			if partial.Message.Content != "" {
-				return chunk(partial.Message.Content)
-			}
-			return nil
-		})
+		roundTdefs := tdefs
+		if round == maxRounds-1 {
+			msgs = append(msgs, llm.Message{Role: "user", Content: maxStepsWarning})
+			roundTdefs = nil
+		}
+
+		resp, err := e.streamWithRetry(ctx, sessionID, msgs, roundTdefs, chunk)
 		if err != nil {
 			if llm.Classify(err) == llm.ContextOverflow && e.Compaction != nil {
 				compacted, cErr := e.Compaction.Process(ctx, prov, workspaceID, sessionID, msgs, 5)
@@ -319,12 +403,7 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 					return fmt.Errorf("compaction failed: %w", cErr)
 				}
 				msgs = compacted
-				resp, err = prov.ChatStream(ctx, msgs, tdefs, func(partial *llm.Response) error {
-					if partial.Message.Content != "" {
-						return chunk(partial.Message.Content)
-					}
-					return nil
-				})
+				resp, err = e.streamWithRetry(ctx, sessionID, msgs, roundTdefs, chunk)
 				if err != nil {
 					return err
 				}
@@ -345,6 +424,20 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 
 		for _, p := range resp.Message.Parts {
 			if p.Type != "tool_call" {
+				continue
+			}
+
+			if p.ToolName == "_noop" {
+				toolMsg := llm.Message{
+					Role: "tool",
+					Parts: []llm.Part{{
+						Type: "tool_result", ToolCallID: p.ToolCallID, ToolName: p.ToolName, Result: "noop",
+					}},
+				}
+				msgs = append(msgs, toolMsg)
+				newMsgs = append(newMsgs, store.MessageRow{
+					Role: "tool", Body: "noop", Parts: mustJSON(toolMsg.Parts), ToolCallID: p.ToolCallID,
+				})
 				continue
 			}
 
@@ -404,13 +497,21 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 	}
 
 persistStream:
+	if len(e.StructuredOutputSchema) > 0 && ctx.Err() == nil {
+		soResult, soMsgs := e.requestStructuredOutput(ctx, sessionID, msgs)
+		if soResult != "" {
+			newMsgs = append(newMsgs, soMsgs...)
+			_ = soResult
+		}
+	}
+
 	if err := e.Store.AppendMessages(ctx, workspaceID, sessionID, newMsgs); err != nil {
 		return err
 	}
 	if e.Bus != nil {
 		e.Bus.Publish("message.created", map[string]any{"session_id": sessionID})
 	}
-	e.maybeCompact(ctx, workspaceID, sessionID)
+	e.maybeCompact(ctx, prov, workspaceID, sessionID)
 	if e.Log != nil {
 		e.Log.Info("turn_complete", "session_id", sessionID)
 	}
@@ -453,7 +554,7 @@ func (e *Engine) executeTool(ctx context.Context, workspaceID, sessionID string,
 	return out, false
 }
 
-func (e *Engine) callWithRetry(ctx context.Context, msgs []llm.Message, tdefs []llm.ToolDef) (*llm.Response, error) {
+func (e *Engine) callWithRetry(ctx context.Context, sessionID string, msgs []llm.Message, tdefs []llm.ToolDef) (*llm.Response, error) {
 	prov, _ := e.resolveProvider()
 	attempts := e.LLMMaxRetries + 1
 	if attempts < 1 {
@@ -466,12 +567,70 @@ func (e *Engine) callWithRetry(ctx context.Context, msgs []llm.Message, tdefs []
 			return resp, nil
 		}
 		last = err
-		k := llm.Classify(err)
+		k, wrapped := llm.ClassifyWithRetry(err)
 		if k != llm.Timeout && k != llm.RateLimit {
 			return nil, err
 		}
+		delay := llm.RetryDelay(i, wrapped)
 		if e.Log != nil {
-			e.Log.Warn("llm_retry", "attempt", i+1, "kind", k, "err", err)
+			e.Log.Warn("llm_retry", "attempt", i+1, "kind", k, "delay_ms", delay.Milliseconds(), "err", err)
+		}
+		if e.Bus != nil {
+			e.Bus.Publish("session.retry", map[string]any{
+				"session_id": sessionID,
+				"attempt":    i + 1,
+				"delay_ms":   delay.Milliseconds(),
+				"error":      err.Error(),
+			})
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return nil, last
+}
+
+func (e *Engine) streamWithRetry(ctx context.Context, sessionID string, msgs []llm.Message, tdefs []llm.ToolDef, chunk func(string) error) (*llm.Response, error) {
+	prov, _ := e.resolveProvider()
+	attempts := e.LLMMaxRetries + 1
+	if attempts < 1 {
+		attempts = 1
+	}
+	streamCb := func(partial *llm.Response) error {
+		if partial.Message.Content != "" {
+			return chunk(partial.Message.Content)
+		}
+		return nil
+	}
+	var last error
+	for i := 0; i < attempts; i++ {
+		resp, err := prov.ChatStream(ctx, msgs, tdefs, streamCb)
+		if err == nil {
+			return resp, nil
+		}
+		last = err
+		k, wrapped := llm.ClassifyWithRetry(err)
+		if k != llm.Timeout && k != llm.RateLimit {
+			return nil, err
+		}
+		delay := llm.RetryDelay(i, wrapped)
+		if e.Log != nil {
+			e.Log.Warn("stream_retry", "attempt", i+1, "kind", k, "delay_ms", delay.Milliseconds(), "err", err)
+		}
+		if e.Bus != nil {
+			e.Bus.Publish("session.retry", map[string]any{
+				"session_id": sessionID,
+				"attempt":    i + 1,
+				"delay_ms":   delay.Milliseconds(),
+				"error":      err.Error(),
+			})
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
 		}
 	}
 	return nil, last
@@ -493,7 +652,17 @@ func (e *Engine) loadHistory(ctx context.Context, workspaceID, sessionID string)
 		}
 		out = append(out, msg)
 	}
-	return out, nil
+	return filterCompacted(out), nil
+}
+
+// filterCompacted drops messages before the last compaction summary.
+func filterCompacted(msgs []llm.Message) []llm.Message {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "user" && strings.Contains(msgs[i].Content, "[Conversation Summary]") {
+			return msgs[i:]
+		}
+	}
+	return msgs
 }
 
 func (e *Engine) collectTools() []llm.ToolDef {
@@ -589,17 +758,75 @@ func (e *Engine) buildSystemPrompt(prov llm.Provider) string {
 	return sys
 }
 
-func (e *Engine) maybeCompact(ctx context.Context, workspaceID, sessionID string) {
-	if e.Log == nil || e.CompactionTurns <= 0 {
+func (e *Engine) maybeCompact(ctx context.Context, prov llm.Provider, workspaceID, sessionID string) {
+	if e.CompactionTurns <= 0 || e.Compaction == nil {
 		return
 	}
-	msgs, err := e.Store.ListMessages(ctx, workspaceID, sessionID, 0, 100000)
+	rows, err := e.Store.ListMessages(ctx, workspaceID, sessionID, 0, 100000)
 	if err != nil {
+		if e.Log != nil {
+			e.Log.Error("maybeCompact_load_fail", "session_id", sessionID, "err", err)
+		}
 		return
 	}
-	if len(msgs) > e.CompactionTurns*2 {
-		e.Log.Info("compaction_threshold", "session_id", sessionID, "messages", len(msgs))
+	if len(rows) <= e.CompactionTurns*2 {
+		return
 	}
+	if e.Log != nil {
+		e.Log.Info("compaction_threshold_exceeded", "session_id", sessionID, "messages", len(rows))
+	}
+
+	msgs := make([]llm.Message, 0, len(rows))
+	for _, r := range rows {
+		msg := llm.Message{Role: r.Role, Content: r.Body}
+		if r.Parts != "" && r.Parts != "[]" {
+			var parts []llm.Part
+			if err := json.Unmarshal([]byte(r.Parts), &parts); err == nil {
+				msg.Parts = parts
+			}
+		}
+		msgs = append(msgs, msg)
+	}
+
+	if prov == nil {
+		prov, _ = e.resolveProvider()
+	}
+
+	go func() {
+		bgCtx := context.Background()
+		compacted, cErr := e.Compaction.Process(bgCtx, prov, workspaceID, sessionID, msgs, 5)
+		if cErr != nil {
+			if e.Log != nil {
+				e.Log.Error("maybeCompact_fail", "session_id", sessionID, "err", cErr)
+			}
+			return
+		}
+		var compactedRows []store.MessageRow
+		for _, m := range compacted {
+			compactedRows = append(compactedRows, msgToRow(m, nil))
+		}
+		if err := e.Store.AppendMessages(bgCtx, workspaceID, sessionID, compactedRows); err != nil {
+			if e.Log != nil {
+				e.Log.Error("maybeCompact_persist_fail", "session_id", sessionID, "err", err)
+			}
+		}
+	}()
+}
+
+// maybeInjectNoop injects a _noop tool definition when tool list is empty
+// but message history contains tool_call parts (prevents LLM errors).
+func (e *Engine) maybeInjectNoop(tdefs []llm.ToolDef, msgs []llm.Message) []llm.ToolDef {
+	if len(tdefs) > 0 {
+		return tdefs
+	}
+	for _, m := range msgs {
+		for _, p := range m.Parts {
+			if p.Type == "tool_call" {
+				return []llm.ToolDef{noopToolDef}
+			}
+		}
+	}
+	return tdefs
 }
 
 func msgToRow(m llm.Message, usage *llm.Usage) store.MessageRow {
@@ -620,6 +847,62 @@ func msgToRow(m llm.Message, usage *llm.Usage) store.MessageRow {
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+func (e *Engine) requestStructuredOutput(ctx context.Context, sessionID string, msgs []llm.Message) (string, []store.MessageRow) {
+	soTool := llm.ToolDef{
+		Name:        "_structured_output",
+		Description: "Provide your final answer as structured JSON matching the required schema.",
+		Parameters:  e.StructuredOutputSchema,
+	}
+
+	soPromptMsg := llm.Message{
+		Role:    "user",
+		Content: "Please provide your final answer using the _structured_output tool with the required JSON schema.",
+	}
+	soMsgs := append(msgs, soPromptMsg)
+
+	resp, err := e.callWithRetry(ctx, sessionID, soMsgs, []llm.ToolDef{soTool})
+	if err != nil {
+		if e.Log != nil {
+			e.Log.Error("structured_output_fail", "session_id", sessionID, "err", err)
+		}
+		return "", nil
+	}
+
+	var rows []store.MessageRow
+	rows = append(rows, msgToRow(resp.Message, &resp.Usage))
+
+	for _, p := range resp.Message.Parts {
+		if p.Type == "tool_call" && p.ToolName == "_structured_output" {
+			result, _ := json.Marshal(p.Args)
+			toolMsg := llm.Message{
+				Role: "tool",
+				Parts: []llm.Part{{
+					Type: "tool_result", ToolCallID: p.ToolCallID, ToolName: p.ToolName, Result: string(result),
+				}},
+			}
+			rows = append(rows, msgToRow(toolMsg, nil))
+			return string(result), rows
+		}
+	}
+
+	return "", rows
+}
+
+func soMsgs2LLMMessages(rows []store.MessageRow) []llm.Message {
+	var out []llm.Message
+	for _, r := range rows {
+		msg := llm.Message{Role: r.Role, Content: r.Body}
+		if r.Parts != "" && r.Parts != "[]" {
+			var parts []llm.Part
+			if err := json.Unmarshal([]byte(r.Parts), &parts); err == nil {
+				msg.Parts = parts
+			}
+		}
+		out = append(out, msg)
+	}
+	return out
 }
 
 func (e *Engine) maybeAutoTitle(ctx context.Context, workspaceID, sessionID, userText string) {

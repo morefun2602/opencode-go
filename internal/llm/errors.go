@@ -3,6 +3,8 @@ package llm
 import (
 	"context"
 	"errors"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -27,7 +29,10 @@ type RetryableError struct {
 func (e *RetryableError) Error() string { return e.Err.Error() }
 func (e *RetryableError) Unwrap() error { return e.Err }
 
+var retryAfterRegex = regexp.MustCompile(`retry[_-]?after[:\s=]*(\d+)`)
+
 // Classify 将错误映射为 Kind（启发式）。
+// 对于 RateLimit 错误，尝试提取 retry-after 并包装为 RetryableError。
 func Classify(err error) Kind {
 	if err == nil {
 		return Other
@@ -51,4 +56,26 @@ func Classify(err error) Kind {
 		return ContextOverflow
 	}
 	return Other
+}
+
+// ClassifyWithRetry classifies and wraps RateLimit errors with retry-after metadata.
+func ClassifyWithRetry(err error) (Kind, error) {
+	k := Classify(err)
+	if k == RateLimit {
+		retryAfter := extractRetryAfter(err.Error())
+		if retryAfter > 0 {
+			return k, &RetryableError{Err: err, Kind: k, RetryAfter: retryAfter}
+		}
+	}
+	return k, err
+}
+
+func extractRetryAfter(s string) int {
+	m := retryAfterRegex.FindStringSubmatch(strings.ToLower(s))
+	if len(m) >= 2 {
+		if v, err := strconv.Atoi(m[1]); err == nil {
+			return v
+		}
+	}
+	return 0
 }

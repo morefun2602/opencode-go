@@ -3,6 +3,7 @@ package tool
 import (
 	"context"
 	"log/slog"
+	"strings"
 
 	"github.com/morefun2602/opencode-go/internal/mcp"
 	"github.com/morefun2602/opencode-go/internal/tools"
@@ -15,7 +16,7 @@ type Router struct {
 	Log     *slog.Logger
 }
 
-// Run 执行工具；未知名路由到 invalid 工具。
+// Run 执行工具；对未找到的工具名先尝试小写匹配，最后路由到 invalid 工具。
 func (r *Router) Run(ctx context.Context, corrID, sessionID, name string, args map[string]any) (string, error) {
 	if r.Builtin != nil && r.Builtin.Has(name) {
 		return r.Builtin.Run(ctx, corrID, sessionID, name, args)
@@ -28,6 +29,30 @@ func (r *Router) Run(ctx context.Context, corrID, sessionID, name string, args m
 					r.Log.Error("mcp_tool_fail", "tool", name, "corr_id", corrID, "session_id", sessionID, "err", err)
 				}
 				return out, err
+			}
+		}
+	}
+
+	lower := strings.ToLower(name)
+	if lower != name {
+		if r.Builtin != nil && r.Builtin.Has(lower) {
+			if r.Log != nil {
+				r.Log.Info("tool_name_repaired", "original", name, "repaired", lower)
+			}
+			return r.Builtin.Run(ctx, corrID, sessionID, lower, args)
+		}
+		for _, c := range r.Clients {
+			for _, t := range c.ListTools() {
+				if strings.EqualFold(t.Name, name) {
+					if r.Log != nil {
+						r.Log.Info("tool_name_repaired", "original", name, "repaired", t.Name)
+					}
+					out, err := c.CallTool(ctx, t.Name, args)
+					if err != nil && r.Log != nil {
+						r.Log.Error("mcp_tool_fail", "tool", t.Name, "corr_id", corrID, "session_id", sessionID, "err", err)
+					}
+					return out, err
+				}
 			}
 		}
 	}
