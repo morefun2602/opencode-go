@@ -1,0 +1,3064 @@
+diff --git a/go.mod b/go.mod
+index 2b058ab..85767e9 100644
+--- a/go.mod
++++ b/go.mod
+@@ -1,14 +1,17 @@
+ module github.com/morefun2602/opencode-go
+ 
+-go 1.26
+-
+-toolchain go1.26.1
++go 1.25.1
+ 
+ require (
+ 	github.com/anthropics/anthropic-sdk-go v1.27.1
++	github.com/charmbracelet/bubbles v1.0.0
++	github.com/charmbracelet/bubbletea v1.3.10
++	github.com/charmbracelet/glamour v1.0.0
++	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
+ 	github.com/mark3labs/mcp-go v0.45.0
+ 	github.com/openai/openai-go v1.12.0
+ 	github.com/spf13/cobra v1.9.1
++	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd
+ 	modernc.org/sqlite v1.37.0
+ )
+ 
+@@ -19,11 +22,7 @@ require (
+ 	github.com/aymerick/douceur v0.2.0 // indirect
+ 	github.com/bahlo/generic-list-go v0.2.0 // indirect
+ 	github.com/buger/jsonparser v1.1.1 // indirect
+-	github.com/charmbracelet/bubbles v1.0.0 // indirect
+-	github.com/charmbracelet/bubbletea v1.3.10 // indirect
+ 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
+-	github.com/charmbracelet/glamour v1.0.0 // indirect
+-	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834 // indirect
+ 	github.com/charmbracelet/x/ansi v0.11.6 // indirect
+ 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
+ 	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
+@@ -53,7 +52,6 @@ require (
+ 	github.com/rivo/uniseg v0.4.7 // indirect
+ 	github.com/spf13/cast v1.7.1 // indirect
+ 	github.com/spf13/pflag v1.0.6 // indirect
+-	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd // indirect
+ 	github.com/tidwall/gjson v1.18.0 // indirect
+ 	github.com/tidwall/match v1.1.1 // indirect
+ 	github.com/tidwall/pretty v1.2.1 // indirect
+diff --git a/go.sum b/go.sum
+index 8476eb6..32b1c56 100644
+--- a/go.sum
++++ b/go.sum
+@@ -1,11 +1,19 @@
++github.com/MakeNowJust/heredoc v1.0.0 h1:cXCdzVdstXyiTqTvfqk9SDHpKNjxuom+DOlyEeQ4pzQ=
++github.com/MakeNowJust/heredoc v1.0.0/go.mod h1:mG5amYoWBHf8vpLOuehzbGGw0EHxpZZ6lCpQ4fNJ8LE=
++github.com/alecthomas/assert/v2 v2.11.0 h1:2Q9r3ki8+JYXvGsDyBXwH3LcJ+WK5D0gc5E8vS6K3D0=
++github.com/alecthomas/assert/v2 v2.11.0/go.mod h1:Bze95FyfUr7x34QZrjL+XP+0qgp/zg8yS+TtBj1WA3k=
+ github.com/alecthomas/chroma/v2 v2.20.0 h1:sfIHpxPyR07/Oylvmcai3X/exDlE8+FA820NTz+9sGw=
+ github.com/alecthomas/chroma/v2 v2.20.0/go.mod h1:e7tViK0xh/Nf4BYHl00ycY6rV7b8iXBksI9E359yNmA=
++github.com/alecthomas/repr v0.5.1 h1:E3G4t2QbHTSNpPKBgMTln5KLkZHLOcU7r37J4pXBuIg=
++github.com/alecthomas/repr v0.5.1/go.mod h1:Fr0507jx4eOXV7AlPV6AVZLYrLIuIeSOWtW57eE/O/4=
+ github.com/anthropics/anthropic-sdk-go v1.27.1 h1:7DgMZ2Ng3C2mPzJGHA30NXQTZolcF07mHd0tGaLwfzk=
+ github.com/anthropics/anthropic-sdk-go v1.27.1/go.mod h1:qUKmaW+uuPB64iy1l+4kOSvaLqPXnHTTBKH6RVZ7q5Q=
+ github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
+ github.com/atotto/clipboard v0.1.4/go.mod h1:ZY9tmq7sm5xIbd9bOK4onWV4S6X0u6GY7Vn0Yu86PYI=
+ github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
+ github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
++github.com/aymanbagabas/go-udiff v0.3.1 h1:LV+qyBQ2pqe0u42ZsUEtPiCaUoqgA9gYRDs3vj1nolY=
++github.com/aymanbagabas/go-udiff v0.3.1/go.mod h1:G0fsKmG+P6ylD0r6N/KgQD/nWzgfnl8ZBcNLgcbrw8E=
+ github.com/aymerick/douceur v0.2.0 h1:Mv+mAeH1Q+n9Fr+oyamOlAkUNPWPlA8PPGR0QAaYuPk=
+ github.com/aymerick/douceur v0.2.0/go.mod h1:wlT5vV2O3h55X9m7iVYN0TBM0NH/MmbLnd30/FjWUq4=
+ github.com/bahlo/generic-list-go v0.2.0 h1:5sz/EEAK+ls5wF+NeqDpk5+iNdMDXrh3z3nPnH1Wvgk=
+@@ -26,6 +34,8 @@ github.com/charmbracelet/x/ansi v0.11.6 h1:GhV21SiDz/45W9AnV2R61xZMRri5NlLnl6CVF
+ github.com/charmbracelet/x/ansi v0.11.6/go.mod h1:2JNYLgQUsyqaiLovhU2Rv/pb8r6ydXKS3NIttu3VGZQ=
+ github.com/charmbracelet/x/cellbuf v0.0.15 h1:ur3pZy0o6z/R7EylET877CBxaiE1Sp1GMxoFPAIztPI=
+ github.com/charmbracelet/x/cellbuf v0.0.15/go.mod h1:J1YVbR7MUuEGIFPCaaZ96KDl5NoS0DAWkskup+mOY+Q=
++github.com/charmbracelet/x/exp/golden v0.0.0-20241011142426-46044092ad91 h1:payRxjMjKgx2PaCWLZ4p3ro9y97+TVLZNaRZgJwSVDQ=
++github.com/charmbracelet/x/exp/golden v0.0.0-20241011142426-46044092ad91/go.mod h1:wDlXFlCrmJ8J+swcL/MnGUuYnqgQdW9rhSD61oNMb6U=
+ github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf h1:rLG0Yb6MQSDKdB52aGX55JT1oi0P0Kuaj7wi1bLUpnI=
+ github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf/go.mod h1:B3UgsnsBZS/eX42BlaNiJkD1pPOUa+oF1IYC6Yd2CEU=
+ github.com/charmbracelet/x/term v0.2.2 h1:xVRT/S2ZcKdhhOuSP4t5cLi5o+JxklsoEObBSgfgZRk=
+@@ -57,6 +67,8 @@ github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
+ github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+ github.com/gorilla/css v1.0.1 h1:ntNaBIghp6JmvWnxbZKANoLyuXTPZ4cAMlo6RyhlbO8=
+ github.com/gorilla/css v1.0.1/go.mod h1:BvnYkspnSzMmwRK+b8/xgNPLiIuNZr6vbZBTPQ2A3b0=
++github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUqJM=
++github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
+ github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
+ github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
+ github.com/invopop/jsonschema v0.13.0 h1:KvpoAJWEjR3uD9Kbm2HWJmqsEaHt8lBUpd0qHcIi21E=
+@@ -136,26 +148,22 @@ github.com/yuin/goldmark-emoji v1.0.6 h1:QWfF2FYaXwL74tfGOW5izeiZepUDroDJfWubQI9
+ github.com/yuin/goldmark-emoji v1.0.6/go.mod h1:ukxJDKFpdFb5x0a5HqbdlcKtebh086iJpI31LTKmWuA=
+ golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 h1:nDVHiLt8aIbd/VzvPWN6kSOPE7+F/fNFDSXLVYkE/Iw=
+ golang.org/x/exp v0.0.0-20250305212735-054e65f0b394/go.mod h1:sIifuuw/Yco/y6yb6+bDNfyeQ/MdPUy/hKEMYQV17cM=
+-golang.org/x/mod v0.24.0 h1:ZfthKaKaT4NrhGVZHO1/WDTwGES4De8KtWO0SIbNJMU=
+-golang.org/x/mod v0.24.0/go.mod h1:IXM97Txy2VM4PJ3gI61r1YEk/gAj6zAHN3AdZt6S9Ww=
++golang.org/x/mod v0.28.0 h1:gQBtGhjxykdjY9YhZpSlZIsbnaE2+PgjfLWUQTnoZ1U=
++golang.org/x/mod v0.28.0/go.mod h1:yfB/L0NOf/kmEbXjzCPOx1iK1fRutOydrCMsqRhEBxI=
+ golang.org/x/net v0.41.0 h1:vBTly1HeNPEn3wtREYfy4GZ/NECgw2Cnl+nK6Nz3uvw=
+ golang.org/x/net v0.41.0/go.mod h1:B/K4NNqkfmg07DQYrbwvSluqCJOOXwUjeb/5lOisjbA=
+-golang.org/x/sync v0.16.0 h1:ycBJEhp9p4vXvUZNszeOq0kGTPghopOL8q0fq3vstxw=
+-golang.org/x/sync v0.16.0/go.mod h1:1dzgHSNfp02xaA81J2MS99Qcpr2w7fw1gpm99rleRqA=
+ golang.org/x/sync v0.17.0 h1:l60nONMj9l5drqw6jlhIELNv9I0A4OFgRsG9k2oT9Ug=
+ golang.org/x/sync v0.17.0/go.mod h1:9KTHXmSnoGruLpwFjVSX0lNNA75CykiMECbovNTZqGI=
+ golang.org/x/sys v0.0.0-20210809222454-d867a43fc93e/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+-golang.org/x/sys v0.34.0 h1:H5Y5sJ2L2JRdyv7ROF1he/lPdvFsd0mJHFw2ThKHxLA=
+-golang.org/x/sys v0.34.0/go.mod h1:BJP2sWEmIv4KK5OTEluFJCKSidICx8ciO85XgH3Ak8k=
+ golang.org/x/sys v0.38.0 h1:3yZWxaJjBmCWXqhN1qh02AkOnCQ1poK6oF+a7xWL6Gc=
+ golang.org/x/sys v0.38.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
+ golang.org/x/term v0.36.0 h1:zMPR+aF8gfksFprF/Nc/rd1wRS1EI6nDBGyWAvDzx2Q=
+ golang.org/x/term v0.36.0/go.mod h1:Qu394IJq6V6dCBRgwqshf3mPF85AqzYEzofzRdZkWss=
+ golang.org/x/text v0.30.0 h1:yznKA/E9zq54KzlzBEAWn1NXSQ8DIp/NYMy88xJjl4k=
+ golang.org/x/text v0.30.0/go.mod h1:yDdHFIX9t+tORqspjENWgzaCVXgk0yYnYuSZ8UzzBVM=
+-golang.org/x/tools v0.31.0 h1:0EedkvKDbh+qistFTd0Bcwe/YLh4vHwWEkiI0toFIBU=
+-golang.org/x/tools v0.31.0/go.mod h1:naFTU+Cev749tSJRXJlna0T3WxKvb1kWEx15xA4SdmQ=
++golang.org/x/tools v0.37.0 h1:DVSRzp7FwePZW356yEAChSdNcQo6Nsp+fex1SUW09lE=
++golang.org/x/tools v0.37.0/go.mod h1:MBN5QPQtLMHVdvsbtarmTNukZDdgwdwlO5qGacAzF0w=
+ gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
+ gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
+ gopkg.in/yaml.v2 v2.2.8 h1:obN1ZagJSUGI0Ek/LBmuj4SNLPfIny3KsKFopxRdj10=
+diff --git a/internal/cli/root.go b/internal/cli/root.go
+index 5bd7af3..9b38dfc 100644
+--- a/internal/cli/root.go
++++ b/internal/cli/root.go
+@@ -1,6 +1,9 @@
+ package cli
+ 
+ import (
++	"fmt"
++	"os"
++
+ 	"github.com/spf13/cobra"
+ )
+ 
+@@ -8,6 +11,7 @@ import (
+ func Run() int {
+ 	root := newRootCmd()
+ 	if err := root.Execute(); err != nil {
++		fmt.Fprintln(os.Stderr, "Error:", err)
+ 		return exitFromErr(err)
+ 	}
+ 	return 0
+@@ -17,6 +21,7 @@ func newRootCmd() *cobra.Command {
+ 	c := &cobra.Command{
+ 		Use:           "opencode",
+ 		Short:         "OpenCode Go 实现",
++		Version:       Version,
+ 		SilenceErrors: true,
+ 		SilenceUsage:  true,
+ 		RunE: func(cmd *cobra.Command, args []string) error {
+@@ -30,5 +35,16 @@ func newRootCmd() *cobra.Command {
+ 	c.AddCommand(newProjectCmd())
+ 	c.AddCommand(newReplCmd())
+ 	c.AddCommand(newTUICmd())
++	c.AddCommand(newVersionCmd())
++	c.AddCommand(newRunCmd())
++	c.AddCommand(newDebugCmd())
++	c.AddCommand(newModelsCmd())
++	c.AddCommand(newProvidersCmd())
++	c.AddCommand(newAgentCmd())
++	c.AddCommand(newMCPCmd())
++	c.AddCommand(newExportCmd())
++	c.AddCommand(newImportCmd())
++	c.AddCommand(newStatsCmd())
++	c.AddCommand(newDBCmd())
+ 	return c
+ }
+diff --git a/internal/cli/sessions.go b/internal/cli/sessions.go
+index 5a11075..7783181 100644
+--- a/internal/cli/sessions.go
++++ b/internal/cli/sessions.go
+@@ -1,9 +1,11 @@
+ package cli
+ 
+ import (
++	"encoding/json"
+ 	"fmt"
+ 	"os"
+ 	"path/filepath"
++	"time"
+ 
+ 	"github.com/spf13/cobra"
+ 
+@@ -12,36 +14,94 @@ import (
+ )
+ 
+ func newSessionsCmd() *cobra.Command {
+-	var configFile string
+ 	c := &cobra.Command{
+-		Use:   "sessions",
+-		Short: "会话（本地 SQLite）",
++		Use:     "sessions",
++		Aliases: []string{"session"},
++		Short:   "会话管理（本地 SQLite）",
+ 	}
+-	list := &cobra.Command{
+-		Use:   "list",
+-		Short: "列出当前工作区会话",
++	c.AddCommand(newSessionListCmd())
++	c.AddCommand(newSessionDeleteCmd())
++	return c
++}
++
++func newSessionListCmd() *cobra.Command {
++	var (
++		configFile string
++		maxCount   int
++		formatFlag string
++	)
++	c := &cobra.Command{
++		Use:     "list",
++		Aliases: []string{"ls"},
++		Short:   "列出当前工作区会话",
+ 		RunE: func(cmd *cobra.Command, args []string) error {
+ 			cfg, err := config.Load(configFile, nil)
+ 			if err != nil {
+ 				return withCode(2, err)
+ 			}
++			if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
++				return err
++			}
+ 			path := filepath.Join(cfg.DataDir, "sqlite.db")
+ 			st, err := store.Open(path)
+ 			if err != nil {
+ 				return err
+ 			}
+ 			defer st.Close()
+-			rows, err := st.ListSessions(cmd.Context(), cfg.WorkspaceID, 200)
++			rows, err := st.ListSessions(cmd.Context(), cfg.WorkspaceID, maxCount)
+ 			if err != nil {
+ 				return err
+ 			}
++			if formatFlag == "json" {
++				enc := json.NewEncoder(os.Stdout)
++				enc.SetIndent("", "  ")
++				return enc.Encode(rows)
++			}
+ 			for _, r := range rows {
+-				_, _ = fmt.Fprintf(os.Stdout, "%s\t%d\n", r.ID, r.CreatedAt)
++				title := r.Title
++				if title == "" {
++					title = "(untitled)"
++				}
++				ts := time.Unix(r.CreatedAt, 0).Format("2006-01-02 15:04")
++				fmt.Fprintf(os.Stdout, "%-34s  %-20s  %s\n", r.ID, title, ts)
++			}
++			return nil
++		},
++	}
++	c.Flags().StringVar(&configFile, "config", "", "配置文件路径")
++	c.Flags().IntVarP(&maxCount, "max-count", "n", 50, "最大数量")
++	c.Flags().StringVar(&formatFlag, "format", "table", "输出格式 (table|json)")
++	return c
++}
++
++func newSessionDeleteCmd() *cobra.Command {
++	var configFile string
++	c := &cobra.Command{
++		Use:   "delete <sessionID>",
++		Short: "删除会话",
++		Args:  cobra.ExactArgs(1),
++		RunE: func(cmd *cobra.Command, args []string) error {
++			cfg, err := config.Load(configFile, nil)
++			if err != nil {
++				return withCode(2, err)
++			}
++			if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
++				return err
++			}
++			path := filepath.Join(cfg.DataDir, "sqlite.db")
++			st, err := store.Open(path)
++			if err != nil {
++				return err
++			}
++			defer st.Close()
++
++			if err := st.DeleteSession(cmd.Context(), cfg.WorkspaceID, args[0]); err != nil {
++				return err
+ 			}
++			fmt.Printf("会话 %s 已删除。\n", args[0])
+ 			return nil
+ 		},
+ 	}
+-	list.Flags().StringVar(&configFile, "config", "", "配置文件路径")
+-	c.AddCommand(list)
++	c.Flags().StringVar(&configFile, "config", "", "配置文件路径")
+ 	return c
+ }
+diff --git a/internal/cli/tui.go b/internal/cli/tui.go
+index 8cc1b09..c44f017 100644
+--- a/internal/cli/tui.go
++++ b/internal/cli/tui.go
+@@ -4,6 +4,7 @@ import (
+ 	"fmt"
+ 	"log/slog"
+ 	"os"
++	"strings"
+ 
+ 	tea "github.com/charmbracelet/bubbletea"
+ 	"github.com/spf13/cobra"
+@@ -16,33 +17,44 @@ func newTUICmd() *cobra.Command {
+ 	var (
+ 		configFile string
+ 		themeFlag  string
++		model      string
++		sessionID  string
++		cont       bool
+ 	)
+ 	c := &cobra.Command{
+ 		Use:   "tui",
+ 		Short: "启动 Bubble Tea 终端界面",
++		SilenceErrors: false,
+ 		RunE: func(cmd *cobra.Command, args []string) error {
+ 			cfg, err := config.Load(configFile, nil)
+ 			if err != nil {
+-				return withCode(2, err)
++				return fmt.Errorf("loading config: %w", err)
+ 			}
+ 			log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+ 			eng, st, err := wireEngine(cfg, log)
+ 			if err != nil {
+-				return err
++				return fmt.Errorf("initializing engine: %w", err)
+ 			}
+ 			defer st.Close()
+ 
+-			eng.Confirm = func(name string, a map[string]any) (bool, error) {
+-				return true, nil
++			// 将 --model flag 应用到 Engine
++			if model != "" {
++				eng.SetModel(model)
+ 			}
+ 
+-			theme := tui.Dark
+-			if themeFlag == "light" {
+-				theme = tui.Light
+-			}
++			theme := tui.ResolveTheme(themeFlag)
+ 
+ 			m := tui.New(eng, st, cfg.WorkspaceID, theme)
+-			p := tea.NewProgram(m, tea.WithAltScreen())
++			p := tea.NewProgram(&m, tea.WithAltScreen(), tea.WithMouseCellMotion())
++
++			eng.Confirm = func(name string, a map[string]any) (bool, error) {
++				ch := make(chan bool, 1)
++				p.Send(tui.NewConfirmRequest(name, a, ch))
++				return <-ch, nil
++			}
++
++			m.SetProgram(p)
++
+ 			if _, err := p.Run(); err != nil {
+ 				return fmt.Errorf("tui: %w", err)
+ 			}
+@@ -50,6 +62,10 @@ func newTUICmd() *cobra.Command {
+ 		},
+ 	}
+ 	c.Flags().StringVar(&configFile, "config", "", "配置文件路径")
+-	c.Flags().StringVar(&themeFlag, "theme", "dark", "主题 (dark|light)")
++	c.Flags().StringVar(&themeFlag, "theme", "dark", "主题名称或JSON文件路径 ("+strings.Join(tui.ThemeNames(), "|")+")")
++	c.Flags().StringVarP(&model, "model", "m", "", "模型 (provider/model)")
++	c.Flags().StringVarP(&sessionID, "session", "s", "", "继续的会话 ID")
++	c.Flags().BoolVarP(&cont, "continue", "c", false, "继续上次会话")
++
+ 	return c
+ }
+diff --git a/internal/cli/wire.go b/internal/cli/wire.go
+index 685d9b3..3662857 100644
+--- a/internal/cli/wire.go
++++ b/internal/cli/wire.go
+@@ -86,6 +86,9 @@ func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Sto
+ 	if err := plugin.StartAll(context.Background()); err != nil {
+ 		return nil, nil, err
+ 	}
++	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
++		return nil, nil, fmt.Errorf("create data dir %s: %w", cfg.DataDir, err)
++	}
+ 	path := filepath.Join(cfg.DataDir, "sqlite.db")
+ 	st, err := store.Open(path)
+ 	if err != nil {
+diff --git a/internal/config/config.go b/internal/config/config.go
+index 367a46f..036bb3e 100644
+--- a/internal/config/config.go
++++ b/internal/config/config.go
+@@ -7,6 +7,8 @@ import (
+ 	"net"
+ 	"net/http"
+ 	"os"
++	"path/filepath"
++	"strconv"
+ 	"strings"
+ 	"time"
+ 
+@@ -15,15 +17,27 @@ import (
+ 
+ const DefaultUpstreamCompatRef = "0.0.0-placeholder-sync-with-upstream"
+ 
++// ProviderFile matches the original opencode provider config format.
++// JSON key in opencode.json: "provider": { "<name>": { "options": { ... } } }
+ type ProviderFile struct {
+-	APIKey  string `json:"api_key"`
+-	BaseURL string `json:"base_url"`
+-	Model   string `json:"model"`
+-	Type    string `json:"type"`
++	Options struct {
++		APIKey  string `json:"apiKey"`
++		BaseURL string `json:"baseURL"`
++	} `json:"options"`
+ }
+ 
++// InternalProvider is the runtime representation used by the engine.
++type InternalProvider struct {
++	APIKey  string
++	BaseURL string
++	Model   string
++	Type    string
++}
++
++// AgentFile matches the original opencode agent config format.
++// JSON key in opencode.json: "agent": { "<name>": { ... } }
+ type AgentFile struct {
+-	Name        string   `json:"name"`
++	Name        string   `json:"-"`
+ 	Description string   `json:"description"`
+ 	Tools       []string `json:"tools"`
+ 	Model       string   `json:"model"`
+@@ -35,12 +49,23 @@ type AgentFile struct {
+ 	Subagent    bool     `json:"subagent"`
+ }
+ 
++// MCPFile matches the original opencode MCP server config format.
++// JSON key in opencode.json: "mcp": { "<name>": { ... } }
++type MCPFile struct {
++	Type        string            `json:"type"`
++	Command     []string          `json:"command"`
++	URL         string            `json:"url"`
++	Enabled     *bool             `json:"enabled"`
++	Environment map[string]string `json:"environment"`
++}
++
++// MCPServerFile is the runtime representation used by the engine.
+ type MCPServerFile struct {
+ 	Name      string   `json:"name"`
+ 	Command   string   `json:"command"`
+-	Args      []string `json:"args"`
+-	Transport string   `json:"transport"` // "stdio" | "sse" | "streamable_http"
+-	URL       string   `json:"url"`
++	Args      []string `json:"args,omitempty"`
++	Transport string   `json:"transport"`
++	URL       string   `json:"url,omitempty"`
+ }
+ 
+ // InferTransport returns the effective transport for this MCP server config.
+@@ -57,43 +82,49 @@ func (m MCPServerFile) InferTransport() string {
+ 	return "stdio"
+ }
+ 
++// File is the JSON on-disk representation, fully compatible with original opencode.
+ type File struct {
+-	UpstreamCompatRef string `json:"upstream_compat_ref"`
+-	Server            struct {
++	Schema            string `json:"$schema,omitempty"`
++	UpstreamCompatRef string `json:"upstream_compat_ref,omitempty"`
++
++	Server struct {
+ 		Listen    string `json:"listen"`
+ 		AuthToken string `json:"auth_token"`
+ 	} `json:"server"`
+-	Workspace struct {
+-		ID string `json:"id"`
+-	} `json:"workspace"`
+-	Go struct {
+-		DataDir                string                  `json:"data_dir"`
+-		LLMTimeout             string                  `json:"llm_timeout"`
+-		LLMProvider            string                  `json:"llm_provider"`
+-		WorkspaceRoot          string                  `json:"workspace_root"`
+-		RequireWriteConfirm    bool                    `json:"require_write_confirm"`
+-		BashTimeoutSec         int                     `json:"bash_timeout_sec"`
+-		MaxOutputBytes         int                     `json:"max_output_bytes"`
+-		CompactionTurns        int                     `json:"compaction_turns"`
+-		LLMMaxRetries          int                     `json:"llm_max_retries"`
+-		StructuredOutputSchema string                  `json:"structured_output_schema"`
+-		MCPServers             []MCPServerFile         `json:"mcp_servers"`
+-		MCPToolPrefix          string                  `json:"mcp_tool_prefix"`
+-		Providers              map[string]ProviderFile `json:"providers"`
+-		DefaultProvider        string                  `json:"default_provider"`
+-		DefaultModel           string                  `json:"default_model"`
+-		MaxToolRounds          int                     `json:"max_tool_rounds"`
+-		Permissions            map[string]string       `json:"permissions"`
+-		SkillsDir              string                  `json:"skills_dir"`
+-		Agents                 []AgentFile             `json:"agents"`
+-		Instructions           []string                `json:"instructions"`
+-		RemoteConfigURL        string                  `json:"remote_config_url"`
+-		Model                  string                  `json:"model"`
+-		SmallModel             string                  `json:"small_model"`
+-		Compaction             CompactionConfig        `json:"compaction"`
+-		LSP                    LSPConfig               `json:"lsp"`
+-		Skills                 SkillsConfig            `json:"skills"`
+-	} `json:"x_opencode_go"`
++
++	// Original opencode top-level fields
++	Provider     map[string]ProviderFile `json:"provider"`
++	Model        string                  `json:"model"`
++	SmallModel   string                  `json:"small_model"`
++	MCP          map[string]MCPFile      `json:"mcp"`
++	Agent        map[string]AgentFile    `json:"agent"`
++	Permission   map[string]string       `json:"permission"`
++	Instructions []string                `json:"instructions"`
++	Skills       SkillsConfig            `json:"skills"`
++	Compaction   CompactionConfig        `json:"compaction"`
++	Lsp          map[string]LSPFile      `json:"lsp"`
++
++	// Go extension fields (optional, kept at top level)
++	DataDir                string `json:"data_dir,omitempty"`
++	WorkspaceID            string `json:"workspace_id,omitempty"`
++	WorkspaceRoot          string `json:"workspace_root,omitempty"`
++	BashTimeoutSec         int    `json:"bash_timeout_sec,omitempty"`
++	MaxOutputBytes         int    `json:"max_output_bytes,omitempty"`
++	MaxToolRounds          int    `json:"max_tool_rounds,omitempty"`
++	LLMMaxRetries          int    `json:"llm_max_retries,omitempty"`
++	LLMTimeout             string `json:"llm_timeout,omitempty"`
++	MCPToolPrefix          string `json:"mcp_tool_prefix,omitempty"`
++	RemoteConfigURL        string `json:"remote_config_url,omitempty"`
++	SkillsDir              string `json:"skills_dir,omitempty"`
++	CompactionTurns        int    `json:"compaction_turns,omitempty"`
++	RequireWriteConfirm    bool   `json:"require_write_confirm,omitempty"`
++	StructuredOutputSchema string `json:"structured_output_schema,omitempty"`
++}
++
++// LSPFile matches the original opencode LSP config format.
++// JSON key: "lsp": { "<language>": { "command": ["cmd", "args..."] } } or false
++type LSPFile struct {
++	Command []string `json:"command"`
+ }
+ 
+ type CompactionConfig struct {
+@@ -124,13 +155,13 @@ func (c CompactionConfig) ReservedTokens() int {
+ }
+ 
+ type LSPServer struct {
+-	Language string   `json:"language"`
+-	Command  string   `json:"command"`
+-	Args     []string `json:"args"`
++	Language string
++	Command  string
++	Args     []string
+ }
+ 
+ type LSPConfig struct {
+-	Servers []LSPServer `json:"servers"`
++	Servers []LSPServer
+ }
+ 
+ type SkillsConfig struct {
+@@ -138,6 +169,7 @@ type SkillsConfig struct {
+ 	URLs  []string `json:"urls"`
+ }
+ 
++// Config is the runtime configuration consumed by the engine.
+ type Config struct {
+ 	UpstreamCompatRef      string
+ 	Listen                 string
+@@ -156,7 +188,7 @@ type Config struct {
+ 	StructuredOutputSchema string
+ 	MCPServers             []MCPServerFile
+ 	MCPToolPrefix          string
+-	Providers              map[string]ProviderFile
++	Providers              map[string]InternalProvider
+ 	DefaultProvider        string
+ 	DefaultModel           string
+ 	MaxToolRounds          int
+@@ -177,7 +209,7 @@ func Defaults() Config {
+ 		UpstreamCompatRef: DefaultUpstreamCompatRef,
+ 		Listen:            "127.0.0.1:8080",
+ 		WorkspaceID:       "default",
+-		DataDir:           ".opencode-go",
++		DataDir:           ".opencode",
+ 		LLMTimeout:        60 * time.Second,
+ 		WorkspaceRoot:     ".",
+ 		BashTimeoutSec:    30,
+@@ -210,6 +242,7 @@ func isLoopbackOnly(addr string) bool {
+ 	return h == "127.0.0.1" || h == "::1" || h == "localhost"
+ }
+ 
++// merge applies a parsed File onto the runtime Config.
+ func merge(dst *Config, src File) {
+ 	if src.UpstreamCompatRef != "" {
+ 		dst.UpstreamCompatRef = src.UpstreamCompatRef
+@@ -220,96 +253,156 @@ func merge(dst *Config, src File) {
+ 	if src.Server.AuthToken != "" {
+ 		dst.AuthToken = src.Server.AuthToken
+ 	}
+-	if src.Workspace.ID != "" {
+-		dst.WorkspaceID = src.Workspace.ID
+-	}
+-	g := src.Go
+-	if g.DataDir != "" {
+-		dst.DataDir = g.DataDir
+-	}
+-	if g.LLMTimeout != "" {
+-		if d, err := time.ParseDuration(g.LLMTimeout); err == nil {
+-			dst.LLMTimeout = d
++
++	// Provider: convert original opencode format to internal
++	if len(src.Provider) > 0 {
++		if dst.Providers == nil {
++			dst.Providers = make(map[string]InternalProvider)
++		}
++		for name, pf := range src.Provider {
++			p := dst.Providers[name]
++			if pf.Options.APIKey != "" {
++				p.APIKey = pf.Options.APIKey
++			}
++			if pf.Options.BaseURL != "" {
++				p.BaseURL = pf.Options.BaseURL
++			}
++			if p.Type == "" {
++				p.Type = name
++			}
++			dst.Providers[name] = p
+ 		}
+ 	}
+-	if g.LLMProvider != "" {
+-		dst.LLMProvider = g.LLMProvider
++
++	if src.Model != "" {
++		dst.Model = src.Model
+ 	}
+-	if g.WorkspaceRoot != "" {
+-		dst.WorkspaceRoot = g.WorkspaceRoot
++	if src.SmallModel != "" {
++		dst.SmallModel = src.SmallModel
+ 	}
+-	dst.RequireWriteConfirm = g.RequireWriteConfirm
+-	if g.BashTimeoutSec > 0 {
+-		dst.BashTimeoutSec = g.BashTimeoutSec
++
++	// MCP: convert map[name]MCPFile to []MCPServerFile
++	if len(src.MCP) > 0 {
++		dst.MCPServers = nil
++		for name, mf := range src.MCP {
++			if mf.Enabled != nil && !*mf.Enabled {
++				continue
++			}
++			s := MCPServerFile{Name: name}
++			if mf.URL != "" {
++				s.URL = mf.URL
++				s.Transport = "streamable_http"
++				if mf.Type == "remote" {
++					s.Transport = "streamable_http"
++				}
++			}
++			if len(mf.Command) > 0 {
++				s.Command = mf.Command[0]
++				if len(mf.Command) > 1 {
++					s.Args = mf.Command[1:]
++				}
++				s.Transport = "stdio"
++			}
++			if mf.Type != "" && s.Transport == "" {
++				switch mf.Type {
++				case "local":
++					s.Transport = "stdio"
++				case "remote":
++					s.Transport = "streamable_http"
++				}
++			}
++			dst.MCPServers = append(dst.MCPServers, s)
++		}
+ 	}
+-	if g.MaxOutputBytes > 0 {
+-		dst.MaxOutputBytes = g.MaxOutputBytes
++
++	// Agent: convert map[name]AgentFile to []AgentFile
++	if len(src.Agent) > 0 {
++		dst.Agents = nil
++		for name, af := range src.Agent {
++			af.Name = name
++			dst.Agents = append(dst.Agents, af)
++		}
+ 	}
+-	if g.CompactionTurns > 0 {
+-		dst.CompactionTurns = g.CompactionTurns
++
++	if len(src.Permission) > 0 {
++		dst.Permissions = make(map[string]string, len(src.Permission))
++		for k, v := range src.Permission {
++			dst.Permissions[k] = v
++		}
+ 	}
+-	if g.LLMMaxRetries > 0 {
+-		dst.LLMMaxRetries = g.LLMMaxRetries
++
++	if len(src.Instructions) > 0 {
++		dst.Instructions = append([]string(nil), src.Instructions...)
+ 	}
+-	if g.StructuredOutputSchema != "" {
+-		dst.StructuredOutputSchema = g.StructuredOutputSchema
++
++	if src.Compaction.Auto != nil || src.Compaction.Reserved > 0 || src.Compaction.Prune != nil {
++		dst.Compaction = src.Compaction
+ 	}
+-	if len(g.MCPServers) > 0 {
+-		dst.MCPServers = append([]MCPServerFile(nil), g.MCPServers...)
++
++	// LSP: convert map[language]LSPFile to LSPConfig
++	if len(src.Lsp) > 0 {
++		dst.LSP.Servers = nil
++		for lang, lf := range src.Lsp {
++			if len(lf.Command) == 0 {
++				continue
++			}
++			s := LSPServer{Language: lang, Command: lf.Command[0]}
++			if len(lf.Command) > 1 {
++				s.Args = lf.Command[1:]
++			}
++			dst.LSP.Servers = append(dst.LSP.Servers, s)
++		}
+ 	}
+-	if g.MCPToolPrefix != "" {
+-		dst.MCPToolPrefix = g.MCPToolPrefix
++
++	if len(src.Skills.Paths) > 0 {
++		dst.Skills.Paths = append([]string(nil), src.Skills.Paths...)
+ 	}
+-	if len(g.Providers) > 0 {
+-		dst.Providers = make(map[string]ProviderFile, len(g.Providers))
+-		for k, v := range g.Providers {
+-			dst.Providers[k] = v
+-		}
++	if len(src.Skills.URLs) > 0 {
++		dst.Skills.URLs = append([]string(nil), src.Skills.URLs...)
+ 	}
+-	if g.DefaultProvider != "" {
+-		dst.DefaultProvider = g.DefaultProvider
++
++	// Go extension fields
++	if src.DataDir != "" {
++		dst.DataDir = src.DataDir
+ 	}
+-	if g.DefaultModel != "" {
+-		dst.DefaultModel = g.DefaultModel
++	if src.WorkspaceID != "" {
++		dst.WorkspaceID = src.WorkspaceID
+ 	}
+-	if g.MaxToolRounds > 0 {
+-		dst.MaxToolRounds = g.MaxToolRounds
++	if src.WorkspaceRoot != "" {
++		dst.WorkspaceRoot = src.WorkspaceRoot
+ 	}
+-	if len(g.Permissions) > 0 {
+-		dst.Permissions = make(map[string]string, len(g.Permissions))
+-		for k, v := range g.Permissions {
+-			dst.Permissions[k] = v
++	if src.LLMTimeout != "" {
++		if d, err := time.ParseDuration(src.LLMTimeout); err == nil {
++			dst.LLMTimeout = d
+ 		}
+ 	}
+-	if g.SkillsDir != "" {
+-		dst.SkillsDir = g.SkillsDir
+-	}
+-	if len(g.Agents) > 0 {
+-		dst.Agents = append([]AgentFile(nil), g.Agents...)
++	if src.BashTimeoutSec > 0 {
++		dst.BashTimeoutSec = src.BashTimeoutSec
+ 	}
+-	if len(g.Instructions) > 0 {
+-		dst.Instructions = append([]string(nil), g.Instructions...)
++	if src.MaxOutputBytes > 0 {
++		dst.MaxOutputBytes = src.MaxOutputBytes
+ 	}
+-	if g.RemoteConfigURL != "" {
+-		dst.RemoteConfigURL = g.RemoteConfigURL
++	if src.MaxToolRounds > 0 {
++		dst.MaxToolRounds = src.MaxToolRounds
+ 	}
+-	if g.Model != "" {
+-		dst.Model = g.Model
++	if src.LLMMaxRetries > 0 {
++		dst.LLMMaxRetries = src.LLMMaxRetries
+ 	}
+-	if g.SmallModel != "" {
+-		dst.SmallModel = g.SmallModel
++	if src.CompactionTurns > 0 {
++		dst.CompactionTurns = src.CompactionTurns
+ 	}
+-	if g.Compaction.Auto != nil || g.Compaction.Reserved > 0 || g.Compaction.Prune != nil {
+-		dst.Compaction = g.Compaction
++	if src.MCPToolPrefix != "" {
++		dst.MCPToolPrefix = src.MCPToolPrefix
+ 	}
+-	if len(g.LSP.Servers) > 0 {
+-		dst.LSP = g.LSP
++	if src.RemoteConfigURL != "" {
++		dst.RemoteConfigURL = src.RemoteConfigURL
+ 	}
+-	if len(g.Skills.Paths) > 0 {
+-		dst.Skills.Paths = append([]string(nil), g.Skills.Paths...)
++	dst.RequireWriteConfirm = src.RequireWriteConfirm
++	if src.StructuredOutputSchema != "" {
++		dst.StructuredOutputSchema = src.StructuredOutputSchema
+ 	}
+-	if len(g.Skills.URLs) > 0 {
+-		dst.Skills.URLs = append([]string(nil), g.Skills.URLs...)
++	if src.SkillsDir != "" {
++		dst.SkillsDir = src.SkillsDir
+ 	}
+ }
+ 
+@@ -334,66 +427,141 @@ func applyEnv(c *Config) {
+ 			c.LLMTimeout = d
+ 		}
+ 	}
++	if v := os.Getenv("OPENCODE_BASH_TIMEOUT"); v != "" {
++		if n, err := strconv.Atoi(v); err == nil {
++			c.BashTimeoutSec = n
++		}
++	}
+ 	if v := os.Getenv("OPENAI_API_KEY"); v != "" {
+ 		if c.Providers == nil {
+-			c.Providers = map[string]ProviderFile{}
++			c.Providers = map[string]InternalProvider{}
+ 		}
+ 		p := c.Providers["openai"]
+ 		if p.APIKey == "" {
+ 			p.APIKey = v
++			if p.Type == "" {
++				p.Type = "openai"
++			}
+ 			c.Providers["openai"] = p
+ 		}
+ 	}
+ 	if v := os.Getenv("ANTHROPIC_API_KEY"); v != "" {
+ 		if c.Providers == nil {
+-			c.Providers = map[string]ProviderFile{}
++			c.Providers = map[string]InternalProvider{}
+ 		}
+ 		p := c.Providers["anthropic"]
+ 		if p.APIKey == "" {
+ 			p.APIKey = v
++			if p.Type == "" {
++				p.Type = "anthropic"
++			}
+ 			c.Providers["anthropic"] = p
+ 		}
+ 	}
++	if v := os.Getenv("OPENCODE_API_KEY"); v != "" {
++		if c.Providers == nil {
++			c.Providers = map[string]InternalProvider{}
++		}
++		p := c.Providers["opencode"]
++		if p.APIKey == "" {
++			p.APIKey = v
++			if p.Type == "" {
++				p.Type = "opencode"
++			}
++			c.Providers["opencode"] = p
++		}
++	}
+ }
+ 
++// loadFile reads and parses a JSON/JSONC config file at path.
++func loadFile(path string) (File, error) {
++	b, err := os.ReadFile(path)
++	if err != nil {
++		return File{}, err
++	}
++	standardized, err := hujson.Standardize(b)
++	if err != nil {
++		return File{}, fmt.Errorf("parse config %s: %w", path, err)
++	}
++	var f File
++	if err := json.Unmarshal(standardized, &f); err != nil {
++		return File{}, fmt.Errorf("parse config %s: %w", path, err)
++	}
++	return f, nil
++}
++
++// Load reads configuration from multiple config files (lowest to highest priority),
++// then overlays environment variables and CLI flags.
++//
++// Search order (later overrides earlier):
++//  1. ~/.config/opencode/opencode.json (user global)
++//  2. .opencode/opencode.jsonc (workspace)
++//  3. opencode.json (CWD)
++//  4. $OPENCODE_CONFIG or explicit configPath (highest)
+ func Load(configPath string, flags *Config) (Config, error) {
+ 	c := Defaults()
+-	path := configPath
+-	if path == "" {
+-		path = os.Getenv("OPENCODE_CONFIG")
++
++	// 1. User global config
++	if home, err := os.UserHomeDir(); err == nil {
++		for _, name := range []string{"opencode.json", "opencode.jsonc"} {
++			p := filepath.Join(home, ".config", "opencode", name)
++			if f, err := loadFile(p); err == nil {
++				merge(&c, f)
++				if c.ConfigPath == "" {
++					c.ConfigPath = p
++				}
++				break
++			}
++		}
+ 	}
+-	if path == "" {
+-		if _, err := os.Stat("opencode.json"); err == nil {
+-			path = "opencode.json"
++
++	// 2. Workspace .opencode/ directory
++	for _, name := range []string{"opencode.jsonc", "opencode.json"} {
++		p := filepath.Join(".opencode", name)
++		if f, err := loadFile(p); err == nil {
++			merge(&c, f)
++			c.ConfigPath = p
++			break
+ 		}
+ 	}
+-	if path != "" {
+-		b, err := os.ReadFile(path)
++
++	// 3. CWD opencode.json
++	if _, err := os.Stat("opencode.json"); err == nil {
++		if f, err := loadFile("opencode.json"); err == nil {
++			merge(&c, f)
++			c.ConfigPath = "opencode.json"
++		}
++	}
++
++	// 4. Explicit path or $OPENCODE_CONFIG
++	explicit := configPath
++	if explicit == "" {
++		explicit = os.Getenv("OPENCODE_CONFIG")
++	}
++	if explicit != "" {
++		f, err := loadFile(explicit)
+ 		if err != nil && !os.IsNotExist(err) {
+ 			return c, err
+ 		}
+ 		if err == nil {
+-			standardized, hjErr := hujson.Standardize(b)
+-			if hjErr != nil {
+-				return c, fmt.Errorf("parse config %s: %w", path, hjErr)
+-			}
+-			var f File
+-			if err := json.Unmarshal(standardized, &f); err != nil {
+-				return c, fmt.Errorf("parse config %s: %w", path, err)
+-			}
+ 			merge(&c, f)
+-			c.ConfigPath = path
++			c.ConfigPath = explicit
+ 		}
+ 	}
++
++	// Remote config fallback
+ 	if c.RemoteConfigURL != "" {
+ 		if rf, err := fetchRemote(c.RemoteConfigURL); err == nil {
+ 			mergeRemoteFallback(&c, rf)
+ 		}
+ 	}
++
+ 	applyEnv(&c)
++
+ 	if flags != nil {
+ 		mergeFlags(&c, flags)
+ 	}
++
+ 	return c, c.Validate()
+ }
+ 
+@@ -419,42 +587,59 @@ func fetchRemote(url string) (File, error) {
+ }
+ 
+ func mergeRemoteFallback(dst *Config, remote File) {
+-	r := remote.Go
+-	if dst.LLMProvider == "" && r.LLMProvider != "" {
+-		dst.LLMProvider = r.LLMProvider
+-	}
+-	if dst.DefaultProvider == "" && r.DefaultProvider != "" {
+-		dst.DefaultProvider = r.DefaultProvider
+-	}
+-	if dst.DefaultModel == "" && r.DefaultModel != "" {
+-		dst.DefaultModel = r.DefaultModel
+-	}
+-	if len(dst.Providers) == 0 && len(r.Providers) > 0 {
+-		dst.Providers = make(map[string]ProviderFile, len(r.Providers))
+-		for k, v := range r.Providers {
+-			dst.Providers[k] = v
++	if dst.Model == "" && remote.Model != "" {
++		dst.Model = remote.Model
++	}
++	if dst.SmallModel == "" && remote.SmallModel != "" {
++		dst.SmallModel = remote.SmallModel
++	}
++	if len(dst.Providers) == 0 && len(remote.Provider) > 0 {
++		dst.Providers = make(map[string]InternalProvider, len(remote.Provider))
++		for name, pf := range remote.Provider {
++			dst.Providers[name] = InternalProvider{
++				APIKey:  pf.Options.APIKey,
++				BaseURL: pf.Options.BaseURL,
++				Type:    name,
++			}
+ 		}
+ 	}
+-	if len(dst.MCPServers) == 0 && len(r.MCPServers) > 0 {
+-		dst.MCPServers = append([]MCPServerFile(nil), r.MCPServers...)
++	if len(dst.MCPServers) == 0 && len(remote.MCP) > 0 {
++		for name, mf := range remote.MCP {
++			if mf.Enabled != nil && !*mf.Enabled {
++				continue
++			}
++			s := MCPServerFile{Name: name}
++			if len(mf.Command) > 0 {
++				s.Command = mf.Command[0]
++				if len(mf.Command) > 1 {
++					s.Args = mf.Command[1:]
++				}
++				s.Transport = "stdio"
++			}
++			if mf.URL != "" {
++				s.URL = mf.URL
++				s.Transport = "streamable_http"
++			}
++			dst.MCPServers = append(dst.MCPServers, s)
++		}
+ 	}
+-	if len(dst.Permissions) == 0 && len(r.Permissions) > 0 {
+-		dst.Permissions = make(map[string]string, len(r.Permissions))
+-		for k, v := range r.Permissions {
++	if len(dst.Permissions) == 0 && len(remote.Permission) > 0 {
++		dst.Permissions = make(map[string]string, len(remote.Permission))
++		for k, v := range remote.Permission {
+ 			dst.Permissions[k] = v
+ 		}
+ 	}
+-	if len(dst.Agents) == 0 && len(r.Agents) > 0 {
+-		dst.Agents = append([]AgentFile(nil), r.Agents...)
+-	}
+-	if len(dst.Instructions) == 0 && len(r.Instructions) > 0 {
+-		dst.Instructions = append([]string(nil), r.Instructions...)
++	if len(dst.Agents) == 0 && len(remote.Agent) > 0 {
++		for name, af := range remote.Agent {
++			af.Name = name
++			dst.Agents = append(dst.Agents, af)
++		}
+ 	}
+-	if dst.SkillsDir == "" && r.SkillsDir != "" {
+-		dst.SkillsDir = r.SkillsDir
++	if len(dst.Instructions) == 0 && len(remote.Instructions) > 0 {
++		dst.Instructions = append([]string(nil), remote.Instructions...)
+ 	}
+-	if dst.StructuredOutputSchema == "" && r.StructuredOutputSchema != "" {
+-		dst.StructuredOutputSchema = r.StructuredOutputSchema
++	if dst.StructuredOutputSchema == "" && remote.StructuredOutputSchema != "" {
++		dst.StructuredOutputSchema = remote.StructuredOutputSchema
+ 	}
+ }
+ 
+@@ -498,4 +683,10 @@ func mergeFlags(dst *Config, flags *Config) {
+ 	if flags.MaxToolRounds > 0 {
+ 		dst.MaxToolRounds = flags.MaxToolRounds
+ 	}
++	if flags.Model != "" {
++		dst.Model = flags.Model
++	}
++	if flags.SmallModel != "" {
++		dst.SmallModel = flags.SmallModel
++	}
+ }
+diff --git a/internal/llm/factory.go b/internal/llm/factory.go
+index ba03a55..a238b68 100644
+--- a/internal/llm/factory.go
++++ b/internal/llm/factory.go
+@@ -9,6 +9,23 @@ type ProviderConfig struct {
+ 	Type    string
+ }
+ 
++// OpenCode Zen free models (cost.input == 0 on models.dev).
++var opencodeDefaultModels = []string{
++	"gpt-5-nano",
++	"grok-code",
++	"glm-4.7-free",
++	"glm-5-free",
++	"kimi-k2.5-free",
++	"nemotron-3-super-free",
++	"mimo-v2-flash-free",
++	"mimo-v2-omni-free",
++	"mimo-v2-pro-free",
++	"minimax-m2.1-free",
++	"minimax-m2.5-free",
++	"big-pickle",
++	"trinity-large-preview-free",
++}
++
+ func NewProvider(name string, cfg ProviderConfig) Provider {
+ 	typ := cfg.Type
+ 	if typ == "" {
+@@ -25,6 +42,23 @@ func NewProvider(name string, cfg ProviderConfig) Provider {
+ 			cfg.APIKey = os.Getenv("ANTHROPIC_API_KEY")
+ 		}
+ 		return NewAnthropic(AnthropicConfig{APIKey: cfg.APIKey, Model: cfg.Model})
++	case "opencode":
++		if cfg.BaseURL == "" {
++			cfg.BaseURL = "https://opencode.ai/zen/v1"
++		}
++		if cfg.APIKey == "" {
++			cfg.APIKey = os.Getenv("OPENCODE_API_KEY")
++		}
++		if cfg.APIKey == "" {
++			cfg.APIKey = "public"
++		}
++		model := cfg.Model
++		if model == "" {
++			model = opencodeDefaultModels[0]
++		}
++		return NewOpenAICompatibleWithModels(name, OpenAIConfig{
++			APIKey: cfg.APIKey, BaseURL: cfg.BaseURL, Model: model,
++		}, opencodeDefaultModels)
+ 	case "openai-compatible":
+ 		if cfg.APIKey == "" {
+ 			cfg.APIKey = os.Getenv("OPENAI_API_KEY")
+diff --git a/internal/llm/openai_compatible.go b/internal/llm/openai_compatible.go
+index 393948a..bb9a377 100644
+--- a/internal/llm/openai_compatible.go
++++ b/internal/llm/openai_compatible.go
+@@ -3,16 +3,27 @@ package llm
+ import "context"
+ 
+ type OpenAICompatible struct {
+-	inner *OpenAI
+-	name  string
++	inner  *OpenAI
++	name   string
++	models []string
+ }
+ 
+ func NewOpenAICompatible(name string, cfg OpenAIConfig) *OpenAICompatible {
+-	return &OpenAICompatible{inner: NewOpenAI(cfg), name: name}
++	return &OpenAICompatible{inner: NewOpenAI(cfg), name: name, models: []string{cfg.Model}}
+ }
+ 
+-func (c *OpenAICompatible) Name() string     { return c.name }
+-func (c *OpenAICompatible) Models() []string  { return []string{c.inner.model} }
++// NewOpenAICompatibleWithModels creates a compatible provider with an explicit model list.
++func NewOpenAICompatibleWithModels(name string, cfg OpenAIConfig, models []string) *OpenAICompatible {
++	return &OpenAICompatible{inner: NewOpenAI(cfg), name: name, models: models}
++}
++
++func (c *OpenAICompatible) Name() string { return c.name }
++func (c *OpenAICompatible) Models() []string {
++	if len(c.models) > 0 {
++		return c.models
++	}
++	return []string{c.inner.model}
++}
+ 
+ func (c *OpenAICompatible) Chat(ctx context.Context, msgs []Message, tools []ToolDef) (*Response, error) {
+ 	return c.inner.Chat(ctx, msgs, tools)
+diff --git a/internal/llm/routing.go b/internal/llm/routing.go
+index de4d3c2..ec87876 100644
+--- a/internal/llm/routing.go
++++ b/internal/llm/routing.go
+@@ -131,3 +131,8 @@ func (r *Router) ResolveDefault() (Provider, string, error) {
+ func (r *Router) ResolveSmall() (Provider, string, error) {
+ 	return r.Resolve(r.SmallModel())
+ }
++
++// SetDefault 在运行时切换默认模型（供 TUI /models 命令使用）。
++func (r *Router) SetDefault(ref ModelRef) {
++	r.DefaultRef = ref
++}
+diff --git a/internal/runtime/engine.go b/internal/runtime/engine.go
+index 05d89cc..0e49588 100644
+--- a/internal/runtime/engine.go
++++ b/internal/runtime/engine.go
+@@ -968,6 +968,41 @@ func soMsgs2LLMMessages(rows []store.MessageRow) []llm.Message {
+ 	return out
+ }
+ 
++// SetModel 在运行时切换默认 provider/model（格式："provider/model" 或 "model"）。
++func (e *Engine) SetModel(providerModel string) {
++	if e.Router != nil {
++		e.Router.SetDefault(llm.ParseModel(providerModel))
++	}
++}
++
++// CurrentModel 返回当前默认模型的字符串表示。
++func (e *Engine) CurrentModel() string {
++	if e.Router == nil {
++		return ""
++	}
++	ref := e.Router.DefaultModel()
++	if ref.ProviderID != "" && ref.ModelID != "" {
++		return ref.ProviderID + "/" + ref.ModelID
++	}
++	return ref.ModelID
++}
++
++// ListModels 返回所有已注册 provider 及其支持的 model 列表。
++func (e *Engine) ListModels() map[string][]string {
++	result := make(map[string][]string)
++	if e.Providers == nil {
++		return result
++	}
++	for _, name := range e.Providers.List() {
++		prov, err := e.Providers.Get(name)
++		if err != nil {
++			continue
++		}
++		result[name] = prov.Models()
++	}
++	return result
++}
++
+ func (e *Engine) maybeAutoTitle(ctx context.Context, workspaceID, sessionID, userText string) {
+ 	prov, _ := e.resolveSmallProvider()
+ 	if prov == nil {
+diff --git a/internal/store/sqlite.go b/internal/store/sqlite.go
+index 78b64f1..d24dabe 100644
+--- a/internal/store/sqlite.go
++++ b/internal/store/sqlite.go
+@@ -12,7 +12,8 @@ import (
+ )
+ 
+ type SQLite struct {
+-	db *sql.DB
++	db   *sql.DB
++	path string
+ }
+ 
+ func Open(path string) (*SQLite, error) {
+@@ -24,7 +25,7 @@ func Open(path string) (*SQLite, error) {
+ 		db.Close()
+ 		return nil, err
+ 	}
+-	return &SQLite{db: db}, nil
++	return &SQLite{db: db, path: path}, nil
+ }
+ 
+ func (s *SQLite) Close() error {
+@@ -245,6 +246,40 @@ func (s *SQLite) Usage(ctx context.Context, workspaceID, sessionID string) (int,
+ 	return prompt, completion, nil
+ }
+ 
++func (s *SQLite) DeleteSession(ctx context.Context, workspaceID, sessionID string) error {
++	tx, err := s.db.BeginTx(ctx, nil)
++	if err != nil {
++		return err
++	}
++	defer tx.Rollback()
++	_, _ = tx.ExecContext(ctx, `DELETE FROM messages WHERE session_id=? AND workspace_id=?`, sessionID, workspaceID)
++	_, err = tx.ExecContext(ctx, `DELETE FROM sessions WHERE id=? AND workspace_id=?`, sessionID, workspaceID)
++	if err != nil {
++		return err
++	}
++	return tx.Commit()
++}
++
++func (s *SQLite) TotalUsage(ctx context.Context, workspaceID string, sinceDays int) (int, int, error) {
++	var prompt, completion int
++	q := `SELECT COALESCE(SUM(cost_prompt_tokens),0), COALESCE(SUM(cost_completion_tokens),0) FROM messages WHERE workspace_id=?`
++	args := []any{workspaceID}
++	if sinceDays > 0 {
++		q += ` AND created_at >= ?`
++		cutoff := time.Now().Unix() - int64(sinceDays*86400)
++		args = append(args, cutoff)
++	}
++	err := s.db.QueryRowContext(ctx, q, args...).Scan(&prompt, &completion)
++	if err != nil {
++		return 0, 0, err
++	}
++	return prompt, completion, nil
++}
++
++func (s *SQLite) DBPath() string {
++	return s.path
++}
++
+ func newID() string {
+ 	b := make([]byte, 16)
+ 	_, _ = rand.Read(b)
+diff --git a/internal/store/store.go b/internal/store/store.go
+index 9d8efe8..289f27d 100644
+--- a/internal/store/store.go
++++ b/internal/store/store.go
+@@ -45,4 +45,7 @@ type Store interface {
+ 	SetTitle(ctx context.Context, workspaceID, sessionID, title string) error
+ 	SetArchived(ctx context.Context, workspaceID, sessionID string, archived bool) error
+ 	Usage(ctx context.Context, workspaceID, sessionID string) (prompt int, completion int, err error)
++	DeleteSession(ctx context.Context, workspaceID, sessionID string) error
++	TotalUsage(ctx context.Context, workspaceID string, sinceDays int) (prompt int, completion int, err error)
++	DBPath() string
+ }
+diff --git a/internal/tui/chat.go b/internal/tui/chat.go
+index 6413c99..7f14c1c 100644
+--- a/internal/tui/chat.go
++++ b/internal/tui/chat.go
+@@ -1,61 +1,108 @@
+ package tui
+ 
+ import (
+-	"strings"
++	"fmt"
+ 
++	"github.com/charmbracelet/bubbles/viewport"
++	tea "github.com/charmbracelet/bubbletea"
+ 	"github.com/charmbracelet/glamour"
+-	"github.com/charmbracelet/lipgloss"
+ 	"github.com/morefun2602/opencode-go/internal/store"
+ )
+ 
+ type chatModel struct {
+-	scroll   int
++	viewport viewport.Model
+ 	renderer *glamour.TermRenderer
++	sticky   bool
++	ready    bool
+ }
+ 
+-func newChat(theme Theme) chatModel {
++func newChat(theme Theme, width, height int) chatModel {
+ 	style := "dark"
+ 	if theme.Name == "light" {
+ 		style = "light"
+ 	}
+-	r, _ := glamour.NewTermRenderer(glamour.WithStylePath(style), glamour.WithWordWrap(80))
+-	return chatModel{renderer: r}
+-}
+-
+-func (c chatModel) View(msgs []store.MessageRow, w, h int, theme Theme) string {
+-	var lines []string
+-	for _, m := range msgs {
+-		var prefix string
+-		var style lipgloss.Style
+-		switch m.Role {
+-		case "user":
+-			prefix = "You"
+-			style = lipgloss.NewStyle().Foreground(theme.Primary).Bold(true)
+-		case "assistant":
+-			prefix = "Assistant"
+-			style = lipgloss.NewStyle().Foreground(theme.Secondary).Bold(true)
+-		case "tool":
+-			prefix = "Tool"
+-			style = lipgloss.NewStyle().Foreground(theme.Subtle).Italic(true)
+-		default:
+-			continue
+-		}
+-		header := style.Render(prefix)
+-		body := m.Body
+-		if m.Role == "assistant" && c.renderer != nil {
+-			if rendered, err := c.renderer.Render(body); err == nil {
+-				body = strings.TrimSpace(rendered)
+-			}
+-		}
+-		if len(body) > 500 {
+-			body = body[:500] + "…"
+-		}
+-		lines = append(lines, header+"\n"+body+"\n")
+-	}
+-	content := strings.Join(lines, "\n")
+-
+-	return lipgloss.NewStyle().
+-		Width(w).
+-		Height(h).
+-		Render(content)
++	r, err := glamour.NewTermRenderer(glamour.WithStylePath(style), glamour.WithWordWrap(80))
++	if err != nil {
++		r = nil
++	}
++
++	vp := viewport.New(width, height)
++	vp.MouseWheelEnabled = true
++
++	return chatModel{
++		viewport: vp,
++		renderer: r,
++		sticky:   true,
++	}
++}
++
++func (c *chatModel) SetSize(w, h int) {
++	c.viewport.Width = w
++	c.viewport.Height = h
++	c.ready = true
++}
++
++// Update forwards tea.Msg to the viewport so mouse wheel scrolling works.
++func (c *chatModel) Update(msg tea.Msg) tea.Cmd {
++	var cmd tea.Cmd
++	c.viewport, cmd = c.viewport.Update(msg)
++	if c.viewport.AtBottom() {
++		c.sticky = true
++	} else if _, ok := msg.(tea.MouseMsg); ok {
++		c.sticky = false
++	}
++	return cmd
++}
++
++// Refresh rebuilds all content from the messages list.
++func (c *chatModel) Refresh(msgs []store.MessageRow, streamBuf string, theme Theme) {
++	blocks := BuildRenderBlocks(msgs, theme, c.viewport.Width, c.renderer)
++	content := BlocksToString(blocks)
++	if streamBuf != "" {
++		content += streamBuf + "\n"
++	}
++	c.viewport.SetContent(content)
++	if c.sticky {
++		c.viewport.GotoBottom()
++	}
++}
++
++func (c *chatModel) View() string {
++	if !c.ready {
++		return ""
++	}
++	return c.viewport.View()
++}
++
++func (c *chatModel) ScrollUp(lines int) {
++	c.sticky = false
++	c.viewport.LineUp(lines)
++}
++
++func (c *chatModel) ScrollDown(lines int) {
++	c.viewport.LineDown(lines)
++	if c.viewport.AtBottom() {
++		c.sticky = true
++	}
++}
++
++func (c *chatModel) PageUp() {
++	c.sticky = false
++	c.viewport.HalfViewUp()
++}
++
++func (c *chatModel) PageDown() {
++	c.viewport.HalfViewDown()
++	if c.viewport.AtBottom() {
++		c.sticky = true
++	}
++}
++
++func (c *chatModel) GotoBottom() {
++	c.sticky = true
++	c.viewport.GotoBottom()
++}
++
++func (c *chatModel) ScrollPercent() string {
++	return fmt.Sprintf("%d%%", int(c.viewport.ScrollPercent()*100))
+ }
+diff --git a/internal/tui/commands.go b/internal/tui/commands.go
+index 5f7d251..42649b3 100644
+--- a/internal/tui/commands.go
++++ b/internal/tui/commands.go
+@@ -8,6 +8,8 @@ import (
+ 	"github.com/morefun2602/opencode-go/internal/store"
+ )
+ 
++// --- Message types ---
++
+ type sessionsLoaded struct{ sessions []store.SessionRow }
+ type messagesLoaded struct{ messages []store.MessageRow }
+ type sessionCreated struct{ id string }
+@@ -17,6 +19,23 @@ type turnComplete struct {
+ 	err   error
+ }
+ 
++type streamStarted struct{ cancel context.CancelFunc }
++type streamChunk struct{ text string }
++type streamDone struct{ err error }
++
++type confirmRequest struct {
++	name string
++	args map[string]any
++	ch   chan bool
++}
++
++// NewConfirmRequest creates a confirmRequest message to be sent via p.Send().
++func NewConfirmRequest(name string, args map[string]any, ch chan bool) confirmRequest {
++	return confirmRequest{name: name, args: args, ch: ch}
++}
++
++// --- Commands ---
++
+ func loadSessions(st store.Store, ws string) tea.Cmd {
+ 	return func() tea.Msg {
+ 		rows, _ := st.ListSessions(context.Background(), ws, 50)
+@@ -44,3 +63,42 @@ func sendMessage(eng *runtime.Engine, ws, session, text string) tea.Cmd {
+ 		return turnComplete{reply: reply, err: err}
+ 	}
+ }
++
++// streamMessage launches a goroutine that uses CompleteTurnStream, sending
++// streamChunk messages back to the TUI via p.Send(). This is the recommended
++// Bubble Tea pattern for long-running operations with multiple callbacks.
++func streamMessage(p *tea.Program, eng *runtime.Engine, ws, session, text string) tea.Cmd {
++	return func() tea.Msg {
++		ctx, cancel := context.WithCancel(context.Background())
++		p.Send(streamStarted{cancel: cancel})
++
++		err := eng.CompleteTurnStream(ctx, ws, session, text, func(chunk string) error {
++			p.Send(streamChunk{text: chunk})
++			return nil
++		})
++		return streamDone{err: err}
++	}
++}
++
++// createSessionAndSend creates a new session and immediately sends the first
++// message on it. Used when the user types from the Home screen with no session.
++func createSessionAndSend(st store.Store, eng *runtime.Engine, ws, text string, p *tea.Program) tea.Cmd {
++	return func() tea.Msg {
++		id, err := st.CreateSession(context.Background(), ws)
++		if err != nil {
++			return turnComplete{err: err}
++		}
++		if p != nil {
++			p.Send(sessionCreated{id: id})
++			ctx, cancel := context.WithCancel(context.Background())
++			p.Send(streamStarted{cancel: cancel})
++			streamErr := eng.CompleteTurnStream(ctx, ws, id, text, func(chunk string) error {
++				p.Send(streamChunk{text: chunk})
++				return nil
++			})
++			return streamDone{err: streamErr}
++		}
++		reply, sendErr := eng.CompleteTurn(context.Background(), ws, id, text)
++		return turnComplete{reply: reply, err: sendErr}
++	}
++}
+diff --git a/internal/tui/model.go b/internal/tui/model.go
+index 37279b6..3e36ed8 100644
+--- a/internal/tui/model.go
++++ b/internal/tui/model.go
+@@ -1,6 +1,12 @@
+ package tui
+ 
+ import (
++	"context"
++	"fmt"
++	"strings"
++	"time"
++
++	"github.com/charmbracelet/bubbles/spinner"
+ 	tea "github.com/charmbracelet/bubbletea"
+ 	"github.com/charmbracelet/lipgloss"
+ 	"github.com/morefun2602/opencode-go/internal/runtime"
+@@ -14,6 +20,13 @@ const (
+ 	focusSidebar
+ )
+ 
++type route int
++
++const (
++	routeHome route = iota
++	routeSession
++)
++
+ // Model is the top-level Bubble Tea model for the TUI application.
+ type Model struct {
+ 	engine    *runtime.Engine
+@@ -23,119 +36,338 @@ type Model struct {
+ 	width     int
+ 	height    int
+ 	active    focus
++	route     route
+ 	mode      string
+-
+-	chat     chatModel
+-	sidebar  sidebarModel
+-	input    inputModel
++	program   *tea.Program
++
++	// Components
++	chat         chatModel
++	sidebar      sidebarModel
++	input        inputModel
++	dialogs      DialogStack
++	leader       LeaderState
++	spinner      spinner.Model
++	autocomplete autocompleteModel
++	palette      commandPalette
++	toasts       ToastManager
++	mention      mentionModel
++
++	// Session state
+ 	sessions []store.SessionRow
+ 	session  string
+ 	messages []store.MessageRow
+ 	busy     bool
+ 	err      error
++
++	// Streaming state
++	streaming    bool
++	streamBuf    strings.Builder
++	streamCancel context.CancelFunc
++
++	// Agent/model display info
++	agentName string
++	modelName string
+ }
+ 
+ // New creates a new top-level TUI model.
+ func New(eng *runtime.Engine, st store.Store, workspace string, theme Theme) Model {
++	modelName := ""
++	if eng.Agent.Model != "" {
++		modelName = eng.Agent.Model
++	} else if eng.Router != nil {
++		ref := eng.Router.DefaultModel()
++		if ref.ModelID != "" {
++			if ref.ProviderID != "" {
++				modelName = ref.ProviderID + "/" + ref.ModelID
++			} else {
++				modelName = ref.ModelID
++			}
++		}
++	}
++
++	sp := spinner.New()
++	sp.Spinner = spinner.Dot
++	sp.Style = lipgloss.NewStyle().Foreground(theme.Primary)
++
++	slashCmds := defaultSlashCommands()
++
+ 	return Model{
+-		engine:    eng,
+-		store:     st,
+-		workspace: workspace,
+-		theme:     theme,
+-		mode:      "build",
+-		active:    focusChat,
+-		chat:      newChat(theme),
+-		sidebar:   newSidebar(theme),
+-		input:     newInput(theme),
+-	}
+-}
+-
+-func (m Model) Init() tea.Cmd {
+-	return tea.Batch(
+-		tea.EnterAltScreen,
+-		loadSessions(m.store, m.workspace),
+-	)
++		engine:       eng,
++		store:        st,
++		workspace:    workspace,
++		theme:        theme,
++		mode:         "build",
++		route:        routeHome,
++		active:       focusChat,
++		chat:         newChat(theme, 80, 20),
++		sidebar:      newSidebar(theme),
++		input:        newInput(theme),
++		leader:       NewLeaderState(),
++		spinner:      sp,
++		autocomplete: newAutocomplete(slashCmds),
++		palette:      newCommandPalette(),
++		toasts:       newToastManager(),
++		mention:      newMentionModel(workspace),
++		agentName:    eng.Agent.Name,
++		modelName:    modelName,
++	}
+ }
+ 
+-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+-	switch msg := msg.(type) {
+-	case tea.KeyMsg:
+-		return m.handleKey(msg)
++// SetProgram injects the *tea.Program reference needed for streaming.
++func (m *Model) SetProgram(p *tea.Program) {
++	m.program = p
++}
+ 
++func (m *Model) Init() tea.Cmd {
++	return tea.Batch(m.spinner.Tick, loadSessions(m.store, m.workspace))
++}
++
++func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
++	var cmds []tea.Cmd
++
++	switch msg := msg.(type) {
+ 	case tea.WindowSizeMsg:
+ 		m.width = msg.Width
+ 		m.height = msg.Height
++		m.recalcLayout()
++		return m, nil
++
++	case tea.KeyMsg:
++		// Command palette takes top priority
++		if m.palette.visible {
++			action, consumed := m.palette.Update(msg)
++			if action != nil {
++				cmd := action()
++				return m, cmd
++			}
++			if consumed {
++				return m, nil
++			}
++		}
++		if !m.dialogs.Empty() {
++			return m.updateDialog(msg)
++		}
++		return m.handleKey(msg)
++
++	case confirmRequest:
++		return m.handleConfirmRequest(msg)
++
++	case spinner.TickMsg:
++		var cmd tea.Cmd
++		m.spinner, cmd = m.spinner.Update(msg)
++		return m, cmd
++
++	case toastExpired:
++		m.toasts.Expire()
++		return m, nil
++
++	case streamStarted:
++		m.streamCancel = msg.cancel
++		m.streaming = true
++		m.streamBuf.Reset()
++		return m, nil
++
++	case streamChunk:
++		m.streamBuf.WriteString(msg.text)
++		m.chat.Refresh(m.messages, m.streamBuf.String(), m.theme)
++		return m, nil
++
++	case streamDone:
++		m.streaming = false
++		m.busy = false
++		m.streamCancel = nil
++		if msg.err != nil {
++			m.err = msg.err
++			cmd := m.toasts.Add("Error: "+msg.err.Error(), ToastError, 5*time.Second)
++			return m, tea.Batch(loadMessages(m.store, m.workspace, m.session), cmd)
++		}
++		m.streamBuf.Reset()
++		return m, loadMessages(m.store, m.workspace, m.session)
++
++	case leaderTimeout:
++		m.leader.Deactivate()
+ 		return m, nil
+ 
+ 	case sessionsLoaded:
+ 		m.sessions = msg.sessions
+-		if len(m.sessions) > 0 {
++		if len(m.sessions) > 0 && m.session == "" {
+ 			m.session = m.sessions[0].ID
+ 			return m, loadMessages(m.store, m.workspace, m.session)
+ 		}
+-		return m, createSession(m.store, m.workspace)
++		return m, nil
+ 
+ 	case sessionCreated:
+ 		m.session = msg.id
+-		return m, loadSessions(m.store, m.workspace)
++		m.messages = nil
++		m.route = routeSession
++		m.chat.Refresh(nil, "", m.theme)
++		cmd := m.toasts.Add("New session created", ToastSuccess, 2*time.Second)
++		return m, tea.Batch(loadSessions(m.store, m.workspace), cmd)
+ 
+ 	case messagesLoaded:
+ 		m.messages = msg.messages
++		m.chat.Refresh(m.messages, "", m.theme)
++		if len(m.messages) > 0 && m.route == routeHome {
++			m.route = routeSession
++		}
+ 		return m, nil
+ 
+ 	case turnComplete:
+ 		m.busy = false
+ 		m.err = msg.err
++		if msg.err != nil {
++			cmd := m.toasts.Add("Error: "+msg.err.Error(), ToastError, 5*time.Second)
++			return m, tea.Batch(loadMessages(m.store, m.workspace, m.session), cmd)
++		}
+ 		return m, loadMessages(m.store, m.workspace, m.session)
+ 
+ 	case sessionSelected:
+ 		m.session = msg.id
++		m.route = routeSession
+ 		return m, loadMessages(m.store, m.workspace, m.session)
+ 	}
+ 
+-	if m.active == focusSidebar {
+-		var cmd tea.Cmd
+-		m.sidebar, cmd = m.sidebar.Update(msg, m.sessions)
+-		return m, cmd
++	// Forward other messages (mouse, etc.) to appropriate components
++	if !m.dialogs.Empty() {
++		return m.updateDialog(msg)
+ 	}
+-	var cmd tea.Cmd
+-	m.input, cmd = m.input.Update(msg)
+-	return m, cmd
++
++	if m.route == routeSession {
++		cmd := m.chat.Update(msg)
++		if cmd != nil {
++			cmds = append(cmds, cmd)
++		}
++	}
++
++	return m, tea.Batch(cmds...)
+ }
+ 
+-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+-	switch msg.String() {
++func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
++	key := msg.String()
++
++	// Mention popup takes priority when visible
++	if m.mention.visible {
++		selected, consumed := m.mention.Update(msg)
++		if selected != nil {
++			text := m.input.Value()
++			atIdx := strings.LastIndex(text, "@")
++			if atIdx >= 0 {
++				m.input.area.SetValue(text[:atIdx] + "@" + selected.Value + " ")
++				m.input.area.CursorEnd()
++			}
++			return m, nil
++		}
++		if consumed {
++			return m, nil
++		}
++	}
++
++	// Autocomplete takes priority when visible
++	if m.autocomplete.visible {
++		selected, consumed := m.autocomplete.Update(msg)
++		if selected != nil {
++			m.input.Reset()
++			return m, m.executeSlashCommand(selected)
++		}
++		if consumed {
++			return m, nil
++		}
++	}
++
++	if m.leader.IsActive() {
++		m.leader.Deactivate()
++		if cmd := m.dispatchLeader(key); cmd != nil {
++			return m, cmd
++		}
++		return m, nil
++	}
++
++	switch key {
+ 	case "ctrl+c":
+ 		return m, tea.Quit
++
++	case "ctrl+x":
++		return m, m.leader.Activate()
++
+ 	case "ctrl+p":
+-		switch m.mode {
+-		case "build":
+-			m.mode = "plan"
+-		case "plan":
+-			m.mode = "explore"
+-		default:
+-			m.mode = "build"
+-		}
++		m.openCommandPalette()
+ 		return m, nil
+-	case "ctrl+b":
++
++	case "esc":
++		if m.autocomplete.visible {
++			m.autocomplete.Hide()
++			return m, nil
++		}
++		if m.mention.visible {
++			m.mention.Hide()
++			return m, nil
++		}
++		if m.streaming && m.streamCancel != nil {
++			m.streamCancel()
++			return m, nil
++		}
+ 		if m.active == focusSidebar {
+ 			m.active = focusChat
+-		} else {
+-			m.active = focusSidebar
++			return m, nil
++		}
++		if m.route == routeSession && len(m.messages) == 0 {
++			m.route = routeHome
++			return m, nil
+ 		}
+ 		return m, nil
+-	case "ctrl+n":
+-		return m, createSession(m.store, m.workspace)
+-	}
+ 
+-	if m.active == focusChat && msg.String() == "enter" && !m.busy {
+-		text := m.input.Value()
+-		if text == "" {
+-			return m, nil
++	case "pgup":
++		m.chat.PageUp()
++		return m, nil
++
++	case "pgdown":
++		m.chat.PageDown()
++		return m, nil
++
++	case "end":
++		m.chat.GotoBottom()
++		return m, nil
++
++	case "enter":
++		if m.route == routeHome {
++			text := m.input.Value()
++			if text == "" {
++				m.route = routeSession
++				if m.session == "" {
++					return m, createSession(m.store, m.workspace)
++				}
++				return m, nil
++			}
++			m.input.Reset()
++			m.autocomplete.Hide()
++			m.mention.Hide()
++			m.busy = true
++			m.err = nil
++			m.route = routeSession
++			if m.session == "" {
++				return m, createSessionAndSend(m.store, m.engine, m.workspace, text, m.program)
++			}
++			if m.program != nil {
++				return m, streamMessage(m.program, m.engine, m.workspace, m.session, text)
++			}
++			return m, sendMessage(m.engine, m.workspace, m.session, text)
++		}
++
++		if m.active == focusChat && !m.busy && !m.streaming {
++			text := m.input.Value()
++			if text == "" {
++				return m, nil
++			}
++			m.input.Reset()
++			m.autocomplete.Hide()
++			m.mention.Hide()
++			m.busy = true
++			m.err = nil
++			if m.program != nil {
++				return m, streamMessage(m.program, m.engine, m.workspace, m.session, text)
++			}
++			return m, sendMessage(m.engine, m.workspace, m.session, text)
+ 		}
+-		m.input.Reset()
+-		m.busy = true
+-		return m, sendMessage(m.engine, m.workspace, m.session, text)
+ 	}
+ 
+ 	if m.active == focusSidebar {
+@@ -144,79 +376,463 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+ 		return m, cmd
+ 	}
+ 
++	// Pass key to textarea, then check triggers
+ 	var cmd tea.Cmd
+ 	m.input, cmd = m.input.Update(msg)
++	m.checkAutocompleteTriggers()
+ 	return m, cmd
+ }
+ 
+-func (m Model) View() string {
+-	if m.width == 0 {
+-		return "Loading..."
++func (m *Model) checkAutocompleteTriggers() {
++	text := m.input.Value()
++
++	// Check for "/" at the start of input
++	if strings.HasPrefix(text, "/") {
++		query := text[1:]
++		m.autocomplete.Show(query)
++		m.mention.Hide()
++		return
++	}
++
++	// Check for "@" mention trigger
++	atIdx := strings.LastIndex(text, "@")
++	if atIdx >= 0 {
++		before := ""
++		if atIdx > 0 {
++			before = string(text[atIdx-1])
++		}
++		if atIdx == 0 || before == " " || before == "\n" {
++			query := text[atIdx+1:]
++			if !strings.Contains(query, " ") {
++				m.mention.Show(query)
++				m.autocomplete.Hide()
++				return
++			}
++		}
++	}
++
++	// Neither trigger active
++	if m.autocomplete.visible {
++		m.autocomplete.Hide()
++	}
++	if m.mention.visible {
++		m.mention.Hide()
++	}
++}
++
++func (m *Model) executeSlashCommand(cmd *SlashCommand) tea.Cmd {
++	switch cmd.Name {
++	case "new":
++		return createSession(m.store, m.workspace)
++	case "sessions":
++		return m.openSessionDialog()
++	case "agents":
++		return m.openAgentDialog()
++	case "models":
++		return m.openModelDialog()
++	case "themes":
++		return m.openThemeDialog()
++	case "exit":
++		return tea.Quit
++	case "sidebar":
++		m.toggleSidebar()
++		return nil
++	case "home":
++		m.route = routeHome
++		return nil
++	case "help":
++		m.dialogs.Push(NewAlertDialog("Keyboard Shortcuts",
++			"ctrl+x → leader key\n"+
++				"  n: new session\n"+
++				"  b: sidebar\n"+
++				"  a: agents\n"+
++				"  l: sessions\n"+
++				"  h: home\n"+
++				"  q: quit\n\n"+
++				"ctrl+p: command palette\n"+
++				"pgup/pgdown: scroll\n"+
++				"esc: cancel/back\n"+
++				"/: slash commands\n"+
++				"@: file/agent mentions"))
++		return nil
++	case "status":
++		info := "Agent: " + m.agentName + "\n"
++		info += "Model: " + m.modelName + "\n"
++		info += "Mode: " + m.mode + "\n"
++		info += "Session: " + m.session + "\n"
++		info += "Messages: " + fmt.Sprintf("%d", len(m.messages)) + "\n"
++		m.dialogs.Push(NewAlertDialog("Status", info))
++		return nil
++	}
++	return nil
++}
++
++func (m *Model) openThemeDialog() tea.Cmd {
++	names := ThemeNames()
++	m.dialogs.Push(NewSelectDialogWithKind("Select Theme", names, dialogKindTheme))
++	return nil
++}
++
++func (m *Model) openCommandPalette() {
++	var items []PaletteItem
++
++	// Session commands
++	items = append(items,
++		PaletteItem{Label: "New Session", Category: "Session", Action: func() tea.Cmd {
++			return createSession(m.store, m.workspace)
++		}},
++		PaletteItem{Label: "Switch Session", Category: "Session", Action: func() tea.Cmd {
++			return m.openSessionDialog()
++		}},
++	)
++
++	// Agent commands
++	items = append(items,
++		PaletteItem{Label: "Switch Agent", Category: "Agent", Action: func() tea.Cmd {
++			return m.openAgentDialog()
++		}},
++		PaletteItem{Label: "Switch Model", Category: "Agent", Action: func() tea.Cmd {
++			return m.openModelDialog()
++		}},
++	)
++
++	// Theme commands
++	for _, name := range ThemeNames() {
++		themeName := name
++		items = append(items, PaletteItem{
++			Label: "Theme: " + themeName, Category: "Appearance",
++			Action: func() tea.Cmd {
++				if t, ok := BuiltinThemes[themeName]; ok {
++					m.theme = t
++					m.chat = newChat(t, m.chat.viewport.Width, m.chat.viewport.Height)
++					m.recalcLayout()
++					m.chat.Refresh(m.messages, "", m.theme)
++				}
++				return nil
++			},
++		})
++	}
++
++	// Navigation
++	items = append(items,
++		PaletteItem{Label: "Go Home", Category: "Navigation", Action: func() tea.Cmd {
++			m.route = routeHome
++			return nil
++		}},
++		PaletteItem{Label: "Toggle Sidebar", Category: "Navigation", Action: func() tea.Cmd {
++			m.toggleSidebar()
++			return nil
++		}},
++		PaletteItem{Label: "Show Help", Category: "Help", Action: func() tea.Cmd {
++			return m.executeSlashCommand(&SlashCommand{Name: "help"})
++		}},
++		PaletteItem{Label: "Show Status", Category: "Info", Action: func() tea.Cmd {
++			return m.executeSlashCommand(&SlashCommand{Name: "status"})
++		}},
++		PaletteItem{Label: "Exit", Category: "Application", Action: func() tea.Cmd {
++			return tea.Quit
++		}},
++	)
++
++	m.palette.Open(items)
++}
++
++func (m *Model) dispatchLeader(key string) tea.Cmd {
++	switch key {
++	case "n":
++		return createSession(m.store, m.workspace)
++	case "b":
++		m.toggleSidebar()
++		return nil
++	case "a":
++		return m.openAgentDialog()
++	case "l":
++		return m.openSessionDialog()
++	case "h":
++		m.route = routeHome
++		return nil
++	case "q":
++		return tea.Quit
++	}
++	return nil
++}
++
++func (m *Model) toggleSidebar() {
++	if m.active == focusSidebar {
++		m.active = focusChat
++	} else {
++		m.active = focusSidebar
++	}
++	m.recalcLayout()
++}
++
++func (m *Model) openAgentDialog() tea.Cmd {
++	agents := runtime.ListSubagents()
++	if len(agents) == 0 {
++		return nil
++	}
++	names := make([]string, len(agents))
++	for i, a := range agents {
++		names[i] = a.Name
++	}
++	m.dialogs.Push(NewSelectDialogWithKind("Select Agent", names, dialogKindAgent))
++	return nil
++}
++
++func (m *Model) openModelDialog() tea.Cmd {
++	modelMap := m.engine.ListModels()
++	if len(modelMap) == 0 {
++		m.dialogs.Push(NewAlertDialog("No Models", "No providers are configured."))
++		return nil
++	}
++	var items []string
++	for provider, models := range modelMap {
++		for _, model := range models {
++			items = append(items, provider+"/"+model)
++		}
++	}
++	m.dialogs.Push(NewSelectDialogWithKind("Select Model", items, dialogKindModel))
++	return nil
++}
++
++func (m *Model) openSessionDialog() tea.Cmd {
++	if len(m.sessions) == 0 {
++		return nil
++	}
++	names := make([]string, len(m.sessions))
++	for i, s := range m.sessions {
++		name := s.Title
++		if name == "" {
++			name = s.ID
++		}
++		names[i] = name
++	}
++	m.dialogs.Push(NewSelectDialogWithKind("Select Session", names, dialogKindSession))
++	return nil
++}
++
++func (m *Model) updateDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
++	if m.dialogs.Empty() {
++		return m, nil
++	}
++	top := m.dialogs.Top()
++	updated, cmd := top.Update(msg)
++	m.dialogs.stack[len(m.dialogs.stack)-1] = updated
++
++	if updated.Done() {
++		m.dialogs.Pop()
++		return m.handleDialogResult(updated)
+ 	}
++	return m, cmd
++}
+ 
+-	sidebar := ""
++func (m *Model) handleDialogResult(d Dialog) (tea.Model, tea.Cmd) {
++	switch dialog := d.(type) {
++	case *confirmDialogWithChannel:
++		_ = dialog
++	case *SelectDialog:
++		selected, _ := dialog.Result().(string)
++		if selected == "" {
++			return m, nil
++		}
++		switch dialog.kind {
++		case dialogKindAgent:
++			m.agentName = selected
++		case dialogKindModel:
++			m.engine.SetModel(selected)
++			m.modelName = selected
++			cmd := m.toasts.Add("Model: "+selected, ToastSuccess, 2*time.Second)
++			return m, cmd
++		case dialogKindSession:
++			for _, s := range m.sessions {
++				name := s.Title
++				if name == "" {
++					name = s.ID
++				}
++				if name == selected {
++					m.session = s.ID
++					m.route = routeSession
++					return m, loadMessages(m.store, m.workspace, m.session)
++				}
++			}
++		case dialogKindTheme:
++			if t, ok := BuiltinThemes[selected]; ok {
++				m.theme = t
++				m.chat = newChat(t, m.chat.viewport.Width, m.chat.viewport.Height)
++				m.recalcLayout()
++				m.chat.Refresh(m.messages, "", m.theme)
++			}
++		}
++	}
++	return m, nil
++}
++
++func (m *Model) handleConfirmRequest(req confirmRequest) (tea.Model, tea.Cmd) {
++	desc := "Tool: " + req.name
++	d := &confirmDialogWithChannel{
++		ConfirmDialog: *NewConfirmDialog("Permission Required", desc),
++		ch:            req.ch,
++	}
++	m.dialogs.Push(d)
++	return m, nil
++}
++
++// confirmDialogWithChannel wraps ConfirmDialog to write result to a channel when done.
++type confirmDialogWithChannel struct {
++	ConfirmDialog
++	ch chan bool
++}
++
++func (d *confirmDialogWithChannel) Update(msg tea.Msg) (Dialog, tea.Cmd) {
++	inner, cmd := d.ConfirmDialog.Update(msg)
++	updated := inner.(*ConfirmDialog)
++	d.ConfirmDialog = *updated
++	if d.ConfirmDialog.Done() {
++		d.ch <- d.ConfirmDialog.yes
++	}
++	return d, cmd
++}
++
++func (d *confirmDialogWithChannel) Done() bool { return d.ConfirmDialog.Done() }
++func (d *confirmDialogWithChannel) Result() any { return d.ConfirmDialog.Result() }
++func (d *confirmDialogWithChannel) View(w, h int, theme Theme) string {
++	return d.ConfirmDialog.View(w, h, theme)
++}
++
++func (m *Model) recalcLayout() {
+ 	sidebarW := 0
+ 	if m.active == focusSidebar {
+ 		sidebarW = min(30, m.width/3)
+-		sidebar = m.sidebar.View(m.sessions, m.session, sidebarW, m.height-2)
+ 	}
+-
+ 	chatW := m.width - sidebarW
+-	statusBar := m.statusBar(chatW)
++	headerH := 1
++	footerH := 1
+ 	inputH := 4
+-	chatH := m.height - inputH - 1
++	chatH := m.height - headerH - footerH - inputH
++	if chatH < 1 {
++		chatH = 1
++	}
++	_ = chatW
++	m.chat.SetSize(chatW, chatH)
++}
+ 
+-	chatContent := m.chat.View(m.messages, chatW, chatH, m.theme)
+-	inputContent := m.input.View(chatW, m.theme)
++func (m *Model) View() string {
++	if m.width == 0 {
++		return "Loading..."
++	}
+ 
+-	main := lipgloss.JoinVertical(lipgloss.Left, chatContent, inputContent, statusBar)
+-	if sidebarW > 0 {
+-		return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, main)
++	// Command palette takes priority over everything
++	if m.palette.visible {
++		bg := m.renderMainView()
++		paletteView := m.palette.View(m.width, m.height, m.theme)
++		_ = bg
++		return paletteView
+ 	}
+-	return main
++
++	if !m.dialogs.Empty() {
++		bg := m.renderMainView()
++		overlay := m.dialogs.Top().View(m.width, m.height, m.theme)
++		_ = bg
++		return overlay
++	}
++
++	return m.renderMainView()
++}
++
++func (m *Model) renderMainView() string {
++	if m.route == routeHome {
++		return m.renderHomeView()
++	}
++	return m.renderSessionView()
+ }
+ 
+-func (m Model) statusBar(w int) string {
+-	modeStyle := lipgloss.NewStyle().
+-		Foreground(m.theme.Background).
+-		Background(m.theme.Primary).
+-		Padding(0, 1)
++func (m *Model) renderSessionView() string {
++	sidebarW := 0
++	sidebarContent := ""
++	if m.active == focusSidebar {
++		sidebarW = min(30, m.width/3)
++		sidebarContent = m.sidebar.View(m.sessions, m.session, sidebarW, m.height-2)
++	}
++	chatW := m.width - sidebarW
++
++	title := ""
++	for _, s := range m.sessions {
++		if s.ID == m.session {
++			title = s.Title
++			break
++		}
++	}
++
++	header := RenderHeader(title, m.agentName, m.modelName, chatW, m.theme)
++	chatView := m.chat.View()
+ 
+-	sessionStyle := lipgloss.NewStyle().
+-		Foreground(m.theme.Subtle)
++	acView := m.autocomplete.View(chatW, m.theme)
++	mentionView := m.mention.View(chatW, m.theme)
++	inputView := m.input.View(chatW, m.theme)
+ 
+-	hintStyle := lipgloss.NewStyle().
+-		Foreground(m.theme.Subtle)
++	hints := "ctrl+x:leader  ctrl+p:palette  /:cmds  @:files"
++	if m.leader.IsActive() {
++		hints = "n:new  b:sidebar  a:agent  l:sessions  h:home  q:quit"
++	}
++	busyOrStream := m.busy || m.streaming
++	footer := RenderFooter(m.mode, m.err, busyOrStream, m.leader.IsActive(), hints, chatW, m.theme, m.spinner)
+ 
+-	modeText := modeStyle.Render(m.mode)
++	parts := []string{header, chatView}
++	if acView != "" {
++		parts = append(parts, acView)
++	}
++	if mentionView != "" {
++		parts = append(parts, mentionView)
++	}
++	parts = append(parts, inputView, footer)
+ 
+-	sessionText := sessionStyle.Render(" " + truncate(m.session, 12))
++	// Overlay toasts at the top right
++	main := lipgloss.JoinVertical(lipgloss.Left, parts...)
+ 
+-	busyText := ""
+-	if m.busy {
+-		busyText = lipgloss.NewStyle().
+-			Foreground(m.theme.Success).
+-			Render(" ⟳ thinking...")
++	if sidebarW > 0 {
++		main = lipgloss.JoinHorizontal(lipgloss.Top, sidebarContent, main)
+ 	}
+ 
+-	errText := ""
+-	if m.err != nil {
+-		errText = lipgloss.NewStyle().
+-			Foreground(m.theme.Error).
+-			Render(" err: " + truncate(m.err.Error(), 30))
++	// Render toasts on top
++	if m.toasts.HasToasts() {
++		toastView := m.toasts.View(m.width, m.theme)
++		lines := strings.Split(main, "\n")
++		toastLines := strings.Split(strings.TrimRight(toastView, "\n"), "\n")
++		for i, tl := range toastLines {
++			if i < len(lines) {
++				padW := m.width - lipgloss.Width(tl)
++				if padW > 0 {
++					lines[i] = strings.Repeat(" ", padW) + tl
++				}
++			}
++		}
++		main = strings.Join(lines, "\n")
+ 	}
+ 
+-	hint := hintStyle.Render("  ctrl+p:mode ctrl+b:sidebar ctrl+n:new ctrl+c:quit")
++	return main
++}
+ 
+-	return lipgloss.NewStyle().
+-		Width(w).
+-		Background(m.theme.Border).
+-		Render(modeText + sessionText + busyText + errText + hint)
++func (m *Model) renderHomeView() string {
++	return RenderHome(m.width, m.height, m.agentName, m.modelName, m.workspace,
++		len(m.sessions), m.input, m.theme, m.spinner, m.busy || m.streaming)
+ }
+ 
+-func truncate(s string, n int) string {
+-	if len(s) <= n {
+-		return s
++func defaultSlashCommands() []SlashCommand {
++	return []SlashCommand{
++		{Name: "new", Aliases: []string{"clear"}, Description: "Create a new session"},
++		{Name: "sessions", Aliases: []string{"resume", "continue"}, Description: "List and switch sessions"},
++		{Name: "agents", Description: "Switch agent"},
++		{Name: "models", Description: "List available models"},
++		{Name: "themes", Description: "Switch theme"},
++		{Name: "help", Description: "Show help"},
++		{Name: "exit", Aliases: []string{"quit", "q"}, Description: "Exit the application"},
++		{Name: "compact", Aliases: []string{"summarize"}, Description: "Compact current session"},
++		{Name: "undo", Description: "Undo last user message"},
++		{Name: "redo", Description: "Redo undone message"},
++		{Name: "export", Description: "Export session transcript"},
++		{Name: "rename", Description: "Rename current session"},
++		{Name: "status", Description: "Show status information"},
++		{Name: "sidebar", Description: "Toggle sidebar"},
++		{Name: "home", Description: "Go to home screen"},
+ 	}
+-	return s[:n] + "…"
+ }
+diff --git a/internal/tui/sidebar.go b/internal/tui/sidebar.go
+index 444f3f5..699dfbd 100644
+--- a/internal/tui/sidebar.go
++++ b/internal/tui/sidebar.go
+@@ -56,7 +56,7 @@ func (s sidebarModel) View(sessions []store.SessionRow, current string, w, h int
+ 	for i, sess := range sessions {
+ 		label := sess.Title
+ 		if label == "" {
+-			label = truncate(sess.ID, w-4)
++			label = truncateStr(sess.ID, w-4)
+ 		}
+ 		if label == "" {
+ 			label = fmt.Sprintf("session-%d", i+1)
+diff --git a/internal/tui/theme.go b/internal/tui/theme.go
+index cc304f3..362682a 100644
+--- a/internal/tui/theme.go
++++ b/internal/tui/theme.go
+@@ -1,40 +1,546 @@
+ package tui
+ 
+-import "github.com/charmbracelet/lipgloss"
++import (
++	"encoding/json"
++	"os"
++	"strings"
+ 
+-// Theme holds the color palette for the TUI.
++	"github.com/charmbracelet/lipgloss"
++)
++
++// Theme holds the full color palette for the TUI, matching the TS version's field set.
+ type Theme struct {
+-	Name       string
+-	Primary    lipgloss.Color
+-	Secondary  lipgloss.Color
+-	Background lipgloss.Color
+-	Text       lipgloss.Color
+-	Subtle     lipgloss.Color
+-	Error      lipgloss.Color
+-	Success    lipgloss.Color
+-	Border     lipgloss.Color
+-}
+-
+-var Dark = Theme{
+-	Name:       "dark",
+-	Primary:    lipgloss.Color("#7C3AED"),
+-	Secondary:  lipgloss.Color("#3B82F6"),
+-	Background: lipgloss.Color("#1E1E2E"),
+-	Text:       lipgloss.Color("#CDD6F4"),
+-	Subtle:     lipgloss.Color("#6C7086"),
+-	Error:      lipgloss.Color("#F38BA8"),
+-	Success:    lipgloss.Color("#A6E3A1"),
+-	Border:     lipgloss.Color("#45475A"),
+-}
+-
+-var Light = Theme{
+-	Name:       "light",
+-	Primary:    lipgloss.Color("#7C3AED"),
+-	Secondary:  lipgloss.Color("#3B82F6"),
+-	Background: lipgloss.Color("#EFF1F5"),
+-	Text:       lipgloss.Color("#4C4F69"),
+-	Subtle:     lipgloss.Color("#9CA0B0"),
+-	Error:      lipgloss.Color("#D20F39"),
+-	Success:    lipgloss.Color("#40A02B"),
+-	Border:     lipgloss.Color("#BCC0CC"),
++	Name string `json:"-"`
++
++	// Primary colors
++	Primary   lipgloss.Color `json:"primary"`
++	Secondary lipgloss.Color `json:"secondary"`
++	Accent    lipgloss.Color `json:"accent"`
++
++	// Status
++	Error   lipgloss.Color `json:"error"`
++	Warning lipgloss.Color `json:"warning"`
++	Success lipgloss.Color `json:"success"`
++	Info    lipgloss.Color `json:"info"`
++
++	// Text
++	Text     lipgloss.Color `json:"text"`
++	Subtle   lipgloss.Color `json:"textMuted"`
++
++	// Backgrounds
++	Background      lipgloss.Color `json:"background"`
++	BackgroundPanel lipgloss.Color `json:"backgroundPanel"`
++	BackgroundElem  lipgloss.Color `json:"backgroundElement"`
++
++	// Borders
++	Border       lipgloss.Color `json:"border"`
++	BorderActive lipgloss.Color `json:"borderActive"`
++	BorderSubtle lipgloss.Color `json:"borderSubtle"`
++
++	// Diff
++	DiffAdded              lipgloss.Color `json:"diffAdded"`
++	DiffRemoved            lipgloss.Color `json:"diffRemoved"`
++	DiffContext            lipgloss.Color `json:"diffContext"`
++	DiffHunkHeader         lipgloss.Color `json:"diffHunkHeader"`
++	DiffHighlightAdded     lipgloss.Color `json:"diffHighlightAdded"`
++	DiffHighlightRemoved   lipgloss.Color `json:"diffHighlightRemoved"`
++	DiffAddedBg            lipgloss.Color `json:"diffAddedBg"`
++	DiffRemovedBg          lipgloss.Color `json:"diffRemovedBg"`
++	DiffContextBg          lipgloss.Color `json:"diffContextBg"`
++	DiffLineNumber         lipgloss.Color `json:"diffLineNumber"`
++	DiffAddedLineNumberBg  lipgloss.Color `json:"diffAddedLineNumberBg"`
++	DiffRemovedLineNumberBg lipgloss.Color `json:"diffRemovedLineNumberBg"`
++
++	// Syntax highlighting
++	SyntaxComment     lipgloss.Color `json:"syntaxComment"`
++	SyntaxKeyword     lipgloss.Color `json:"syntaxKeyword"`
++	SyntaxFunction    lipgloss.Color `json:"syntaxFunction"`
++	SyntaxVariable    lipgloss.Color `json:"syntaxVariable"`
++	SyntaxString      lipgloss.Color `json:"syntaxString"`
++	SyntaxNumber      lipgloss.Color `json:"syntaxNumber"`
++	SyntaxType        lipgloss.Color `json:"syntaxType"`
++	SyntaxOperator    lipgloss.Color `json:"syntaxOperator"`
++	SyntaxPunctuation lipgloss.Color `json:"syntaxPunctuation"`
++
++	// Legacy aliases used by existing code (mapped from new fields)
++	ToolBorder    lipgloss.Color `json:"-"`
++	ToolHeader    lipgloss.Color `json:"-"`
++	DialogOverlay lipgloss.Color `json:"-"`
++	HeaderBg      lipgloss.Color `json:"-"`
++	FooterBg      lipgloss.Color `json:"-"`
++}
++
++// fillLegacy populates legacy fields from the expanded fields.
++func (t *Theme) fillLegacy() {
++	t.ToolBorder = t.BorderSubtle
++	t.ToolHeader = t.BackgroundElem
++	t.DialogOverlay = t.BackgroundPanel
++	t.HeaderBg = t.BackgroundElem
++	t.FooterBg = t.BackgroundElem
++	if t.ToolBorder == "" {
++		t.ToolBorder = t.Border
++	}
++	if t.ToolHeader == "" {
++		t.ToolHeader = t.Background
++	}
++	if t.DialogOverlay == "" {
++		t.DialogOverlay = t.Background
++	}
++	if t.HeaderBg == "" {
++		t.HeaderBg = t.Background
++	}
++	if t.FooterBg == "" {
++		t.FooterBg = t.Background
++	}
++}
++
++// IsDark returns true if this is a dark theme (heuristic based on background luminance).
++func (t *Theme) IsDark() bool {
++	r, g, b := hexToRGB(string(t.Background))
++	lum := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
++	return lum < 128
++}
++
++// --- Built-in themes ---
++
++var Dark = func() Theme {
++	t := Theme{
++		Name:            "dark",
++		Primary:         "#7C3AED",
++		Secondary:       "#3B82F6",
++		Accent:          "#F5C2E7",
++		Error:           "#F38BA8",
++		Warning:         "#FAB387",
++		Success:         "#A6E3A1",
++		Info:            "#94E2D5",
++		Text:            "#CDD6F4",
++		Subtle:          "#6C7086",
++		Background:      "#1E1E2E",
++		BackgroundPanel: "#181825",
++		BackgroundElem:  "#313244",
++		Border:          "#45475A",
++		BorderActive:    "#585B70",
++		BorderSubtle:    "#313244",
++		DiffAdded:       "#A6E3A1", DiffRemoved: "#F38BA8",
++		DiffContext: "#9399B2", DiffHunkHeader: "#FAB387",
++		DiffHighlightAdded: "#A6E3A1", DiffHighlightRemoved: "#F38BA8",
++		DiffAddedBg: "#24312B", DiffRemovedBg: "#3C2A32",
++		DiffContextBg: "#181825", DiffLineNumber: "#45475A",
++		DiffAddedLineNumberBg: "#1E2A25", DiffRemovedLineNumberBg: "#32232A",
++		SyntaxComment: "#9399B2", SyntaxKeyword: "#CBA6F7",
++		SyntaxFunction: "#89B4FA", SyntaxVariable: "#F38BA8",
++		SyntaxString: "#A6E3A1", SyntaxNumber: "#FAB387",
++		SyntaxType: "#F9E2AF", SyntaxOperator: "#89DCEB",
++		SyntaxPunctuation: "#CDD6F4",
++	}
++	t.fillLegacy()
++	return t
++}()
++
++var Light = func() Theme {
++	t := Theme{
++		Name:            "light",
++		Primary:         "#7C3AED",
++		Secondary:       "#3B82F6",
++		Accent:          "#EA76CB",
++		Error:           "#D20F39",
++		Warning:         "#FE640B",
++		Success:         "#40A02B",
++		Info:            "#179299",
++		Text:            "#4C4F69",
++		Subtle:          "#9CA0B0",
++		Background:      "#EFF1F5",
++		BackgroundPanel: "#E6E9EF",
++		BackgroundElem:  "#DCE0E8",
++		Border:          "#BCC0CC",
++		BorderActive:    "#ACB0BE",
++		BorderSubtle:    "#CCD0DA",
++		DiffAdded:       "#40A02B", DiffRemoved: "#D20F39",
++		DiffContext: "#7C7F93", DiffHunkHeader: "#FE640B",
++		DiffHighlightAdded: "#40A02B", DiffHighlightRemoved: "#D20F39",
++		DiffAddedBg: "#D6F0D9", DiffRemovedBg: "#F6DFE2",
++		DiffContextBg: "#E6E9EF", DiffLineNumber: "#BCC0CC",
++		DiffAddedLineNumberBg: "#C9E3CB", DiffRemovedLineNumberBg: "#E9D3D6",
++		SyntaxComment: "#7C7F93", SyntaxKeyword: "#8839EF",
++		SyntaxFunction: "#1E66F5", SyntaxVariable: "#D20F39",
++		SyntaxString: "#40A02B", SyntaxNumber: "#FE640B",
++		SyntaxType: "#DF8E1D", SyntaxOperator: "#04A5E5",
++		SyntaxPunctuation: "#4C4F69",
++	}
++	t.fillLegacy()
++	return t
++}()
++
++var Catppuccin = func() Theme {
++	t := Theme{
++		Name: "catppuccin", Primary: "#89B4FA", Secondary: "#CBA6F7", Accent: "#F5C2E7",
++		Error: "#F38BA8", Warning: "#F9E2AF", Success: "#A6E3A1", Info: "#94E2D5",
++		Text: "#CDD6F4", Subtle: "#BAC2DE",
++		Background: "#1E1E2E", BackgroundPanel: "#181825", BackgroundElem: "#11111B",
++		Border: "#313244", BorderActive: "#45475A", BorderSubtle: "#585B70",
++		DiffAdded: "#A6E3A1", DiffRemoved: "#F38BA8",
++		DiffContext: "#9399B2", DiffHunkHeader: "#FAB387",
++		DiffHighlightAdded: "#A6E3A1", DiffHighlightRemoved: "#F38BA8",
++		DiffAddedBg: "#24312B", DiffRemovedBg: "#3C2A32",
++		DiffContextBg: "#181825", DiffLineNumber: "#45475A",
++		DiffAddedLineNumberBg: "#1E2A25", DiffRemovedLineNumberBg: "#32232A",
++		SyntaxComment: "#9399B2", SyntaxKeyword: "#CBA6F7",
++		SyntaxFunction: "#89B4FA", SyntaxVariable: "#F38BA8",
++		SyntaxString: "#A6E3A1", SyntaxNumber: "#FAB387",
++		SyntaxType: "#F9E2AF", SyntaxOperator: "#89DCEB",
++		SyntaxPunctuation: "#CDD6F4",
++	}
++	t.fillLegacy()
++	return t
++}()
++
++var Dracula = func() Theme {
++	t := Theme{
++		Name: "dracula", Primary: "#BD93F9", Secondary: "#FF79C6", Accent: "#8BE9FD",
++		Error: "#FF5555", Warning: "#F1FA8C", Success: "#50FA7B", Info: "#FFB86C",
++		Text: "#F8F8F2", Subtle: "#6272A4",
++		Background: "#282A36", BackgroundPanel: "#21222C", BackgroundElem: "#44475A",
++		Border: "#44475A", BorderActive: "#BD93F9", BorderSubtle: "#191A21",
++		DiffAdded: "#50FA7B", DiffRemoved: "#FF5555",
++		DiffContext: "#6272A4", DiffHunkHeader: "#6272A4",
++		DiffHighlightAdded: "#50FA7B", DiffHighlightRemoved: "#FF5555",
++		DiffAddedBg: "#1A3A1A", DiffRemovedBg: "#3A1A1A",
++		DiffContextBg: "#21222C", DiffLineNumber: "#44475A",
++		DiffAddedLineNumberBg: "#1A3A1A", DiffRemovedLineNumberBg: "#3A1A1A",
++		SyntaxComment: "#6272A4", SyntaxKeyword: "#FF79C6",
++		SyntaxFunction: "#50FA7B", SyntaxVariable: "#F8F8F2",
++		SyntaxString: "#F1FA8C", SyntaxNumber: "#BD93F9",
++		SyntaxType: "#8BE9FD", SyntaxOperator: "#FF79C6",
++		SyntaxPunctuation: "#F8F8F2",
++	}
++	t.fillLegacy()
++	return t
++}()
++
++var Nord = func() Theme {
++	t := Theme{
++		Name: "nord", Primary: "#88C0D0", Secondary: "#81A1C1", Accent: "#8FBCBB",
++		Error: "#BF616A", Warning: "#D08770", Success: "#A3BE8C", Info: "#88C0D0",
++		Text: "#ECEFF4", Subtle: "#8B95A7",
++		Background: "#2E3440", BackgroundPanel: "#3B4252", BackgroundElem: "#434C5E",
++		Border: "#434C5E", BorderActive: "#4C566A", BorderSubtle: "#434C5E",
++		DiffAdded: "#A3BE8C", DiffRemoved: "#BF616A",
++		DiffContext: "#8B95A7", DiffHunkHeader: "#8B95A7",
++		DiffHighlightAdded: "#A3BE8C", DiffHighlightRemoved: "#BF616A",
++		DiffAddedBg: "#3B4252", DiffRemovedBg: "#3B4252",
++		DiffContextBg: "#3B4252", DiffLineNumber: "#434C5E",
++		DiffAddedLineNumberBg: "#3B4252", DiffRemovedLineNumberBg: "#3B4252",
++		SyntaxComment: "#8B95A7", SyntaxKeyword: "#81A1C1",
++		SyntaxFunction: "#88C0D0", SyntaxVariable: "#8FBCBB",
++		SyntaxString: "#A3BE8C", SyntaxNumber: "#B48EAD",
++		SyntaxType: "#8FBCBB", SyntaxOperator: "#81A1C1",
++		SyntaxPunctuation: "#D8DEE9",
++	}
++	t.fillLegacy()
++	return t
++}()
++
++var TokyoNight = func() Theme {
++	t := Theme{
++		Name: "tokyonight", Primary: "#82AAFF", Secondary: "#C099FF", Accent: "#FF966C",
++		Error: "#FF757F", Warning: "#FF966C", Success: "#C3E88D", Info: "#82AAFF",
++		Text: "#C8D3F5", Subtle: "#828BB8",
++		Background: "#1A1B26", BackgroundPanel: "#1E2030", BackgroundElem: "#222436",
++		Border: "#737AA2", BorderActive: "#9099B2", BorderSubtle: "#545C7E",
++		DiffAdded: "#4FD6BE", DiffRemoved: "#C53B53",
++		DiffContext: "#828BB8", DiffHunkHeader: "#828BB8",
++		DiffHighlightAdded: "#B8DB87", DiffHighlightRemoved: "#E26A75",
++		DiffAddedBg: "#20303B", DiffRemovedBg: "#37222C",
++		DiffContextBg: "#1E2030", DiffLineNumber: "#222436",
++		DiffAddedLineNumberBg: "#1B2B34", DiffRemovedLineNumberBg: "#2D1F26",
++		SyntaxComment: "#828BB8", SyntaxKeyword: "#C099FF",
++		SyntaxFunction: "#82AAFF", SyntaxVariable: "#FF757F",
++		SyntaxString: "#C3E88D", SyntaxNumber: "#FF966C",
++		SyntaxType: "#FFC777", SyntaxOperator: "#86E1FC",
++		SyntaxPunctuation: "#C8D3F5",
++	}
++	t.fillLegacy()
++	return t
++}()
++
++var Gruvbox = func() Theme {
++	t := Theme{
++		Name: "gruvbox", Primary: "#FE8019", Secondary: "#D3869B", Accent: "#83A598",
++		Error: "#FB4934", Warning: "#FABD2F", Success: "#B8BB26", Info: "#8EC07C",
++		Text: "#EBDBB2", Subtle: "#928374",
++		Background: "#282828", BackgroundPanel: "#1D2021", BackgroundElem: "#3C3836",
++		Border: "#504945", BorderActive: "#665C54", BorderSubtle: "#3C3836",
++		DiffAdded: "#B8BB26", DiffRemoved: "#FB4934",
++		DiffContext: "#928374", DiffHunkHeader: "#928374",
++		DiffHighlightAdded: "#B8BB26", DiffHighlightRemoved: "#FB4934",
++		DiffAddedBg: "#2E3B2E", DiffRemovedBg: "#3B2E2E",
++		DiffContextBg: "#1D2021", DiffLineNumber: "#504945",
++		DiffAddedLineNumberBg: "#2E3B2E", DiffRemovedLineNumberBg: "#3B2E2E",
++		SyntaxComment: "#928374", SyntaxKeyword: "#FB4934",
++		SyntaxFunction: "#B8BB26", SyntaxVariable: "#83A598",
++		SyntaxString: "#B8BB26", SyntaxNumber: "#D3869B",
++		SyntaxType: "#FABD2F", SyntaxOperator: "#FE8019",
++		SyntaxPunctuation: "#EBDBB2",
++	}
++	t.fillLegacy()
++	return t
++}()
++
++var Monokai = func() Theme {
++	t := Theme{
++		Name: "monokai", Primary: "#F92672", Secondary: "#AE81FF", Accent: "#66D9EF",
++		Error: "#F92672", Warning: "#FD971F", Success: "#A6E22E", Info: "#66D9EF",
++		Text: "#F8F8F2", Subtle: "#75715E",
++		Background: "#272822", BackgroundPanel: "#1E1F1C", BackgroundElem: "#3E3D32",
++		Border: "#49483E", BorderActive: "#75715E", BorderSubtle: "#3E3D32",
++		DiffAdded: "#A6E22E", DiffRemoved: "#F92672",
++		DiffContext: "#75715E", DiffHunkHeader: "#75715E",
++		DiffHighlightAdded: "#A6E22E", DiffHighlightRemoved: "#F92672",
++		DiffAddedBg: "#2E3B2E", DiffRemovedBg: "#3B2E2E",
++		DiffContextBg: "#1E1F1C", DiffLineNumber: "#49483E",
++		DiffAddedLineNumberBg: "#2E3B2E", DiffRemovedLineNumberBg: "#3B2E2E",
++		SyntaxComment: "#75715E", SyntaxKeyword: "#F92672",
++		SyntaxFunction: "#A6E22E", SyntaxVariable: "#F8F8F2",
++		SyntaxString: "#E6DB74", SyntaxNumber: "#AE81FF",
++		SyntaxType: "#66D9EF", SyntaxOperator: "#F92672",
++		SyntaxPunctuation: "#F8F8F2",
++	}
++	t.fillLegacy()
++	return t
++}()
++
++var Solarized = func() Theme {
++	t := Theme{
++		Name: "solarized", Primary: "#268BD2", Secondary: "#6C71C4", Accent: "#2AA198",
++		Error: "#DC322F", Warning: "#CB4B16", Success: "#859900", Info: "#2AA198",
++		Text: "#839496", Subtle: "#586E75",
++		Background: "#002B36", BackgroundPanel: "#073642", BackgroundElem: "#073642",
++		Border: "#586E75", BorderActive: "#657B83", BorderSubtle: "#073642",
++		DiffAdded: "#859900", DiffRemoved: "#DC322F",
++		DiffContext: "#586E75", DiffHunkHeader: "#586E75",
++		DiffHighlightAdded: "#859900", DiffHighlightRemoved: "#DC322F",
++		DiffAddedBg: "#073642", DiffRemovedBg: "#073642",
++		DiffContextBg: "#073642", DiffLineNumber: "#073642",
++		DiffAddedLineNumberBg: "#073642", DiffRemovedLineNumberBg: "#073642",
++		SyntaxComment: "#586E75", SyntaxKeyword: "#859900",
++		SyntaxFunction: "#268BD2", SyntaxVariable: "#B58900",
++		SyntaxString: "#2AA198", SyntaxNumber: "#D33682",
++		SyntaxType: "#B58900", SyntaxOperator: "#859900",
++		SyntaxPunctuation: "#839496",
++	}
++	t.fillLegacy()
++	return t
++}()
++
++var RosePine = func() Theme {
++	t := Theme{
++		Name: "rosepine", Primary: "#C4A7E7", Secondary: "#F6C177", Accent: "#EBBCBA",
++		Error: "#EB6F92", Warning: "#F6C177", Success: "#9CCFD8", Info: "#31748F",
++		Text: "#E0DEF4", Subtle: "#908CAA",
++		Background: "#191724", BackgroundPanel: "#1F1D2E", BackgroundElem: "#26233A",
++		Border: "#403D52", BorderActive: "#524F67", BorderSubtle: "#26233A",
++		DiffAdded: "#9CCFD8", DiffRemoved: "#EB6F92",
++		DiffContext: "#908CAA", DiffHunkHeader: "#908CAA",
++		DiffHighlightAdded: "#9CCFD8", DiffHighlightRemoved: "#EB6F92",
++		DiffAddedBg: "#1F2D30", DiffRemovedBg: "#2D1F27",
++		DiffContextBg: "#1F1D2E", DiffLineNumber: "#26233A",
++		DiffAddedLineNumberBg: "#1F2D30", DiffRemovedLineNumberBg: "#2D1F27",
++		SyntaxComment: "#908CAA", SyntaxKeyword: "#C4A7E7",
++		SyntaxFunction: "#EBBCBA", SyntaxVariable: "#E0DEF4",
++		SyntaxString: "#F6C177", SyntaxNumber: "#EB6F92",
++		SyntaxType: "#9CCFD8", SyntaxOperator: "#C4A7E7",
++		SyntaxPunctuation: "#E0DEF4",
++	}
++	t.fillLegacy()
++	return t
++}()
++
++var OneDark = func() Theme {
++	t := Theme{
++		Name: "one-dark", Primary: "#61AFEF", Secondary: "#C678DD", Accent: "#56B6C2",
++		Error: "#E06C75", Warning: "#D19A66", Success: "#98C379", Info: "#56B6C2",
++		Text: "#ABB2BF", Subtle: "#5C6370",
++		Background: "#282C34", BackgroundPanel: "#21252B", BackgroundElem: "#2C313A",
++		Border: "#3E4452", BorderActive: "#4B5263", BorderSubtle: "#2C313A",
++		DiffAdded: "#98C379", DiffRemoved: "#E06C75",
++		DiffContext: "#5C6370", DiffHunkHeader: "#5C6370",
++		DiffHighlightAdded: "#98C379", DiffHighlightRemoved: "#E06C75",
++		DiffAddedBg: "#2A3D2A", DiffRemovedBg: "#3D2A2A",
++		DiffContextBg: "#21252B", DiffLineNumber: "#3E4452",
++		DiffAddedLineNumberBg: "#2A3D2A", DiffRemovedLineNumberBg: "#3D2A2A",
++		SyntaxComment: "#5C6370", SyntaxKeyword: "#C678DD",
++		SyntaxFunction: "#61AFEF", SyntaxVariable: "#E06C75",
++		SyntaxString: "#98C379", SyntaxNumber: "#D19A66",
++		SyntaxType: "#E5C07B", SyntaxOperator: "#56B6C2",
++		SyntaxPunctuation: "#ABB2BF",
++	}
++	t.fillLegacy()
++	return t
++}()
++
++var GitHub = func() Theme {
++	t := Theme{
++		Name: "github", Primary: "#0969DA", Secondary: "#8250DF", Accent: "#1F883D",
++		Error: "#CF222E", Warning: "#BF8700", Success: "#1A7F37", Info: "#0550AE",
++		Text: "#1F2328", Subtle: "#656D76",
++		Background: "#FFFFFF", BackgroundPanel: "#F6F8FA", BackgroundElem: "#EAEEF2",
++		Border: "#D0D7DE", BorderActive: "#0969DA", BorderSubtle: "#EAEEF2",
++		DiffAdded: "#1A7F37", DiffRemoved: "#CF222E",
++		DiffContext: "#656D76", DiffHunkHeader: "#656D76",
++		DiffHighlightAdded: "#1A7F37", DiffHighlightRemoved: "#CF222E",
++		DiffAddedBg: "#DAFBE1", DiffRemovedBg: "#FFD7D5",
++		DiffContextBg: "#F6F8FA", DiffLineNumber: "#D0D7DE",
++		DiffAddedLineNumberBg: "#CCFFD8", DiffRemovedLineNumberBg: "#FFC1BA",
++		SyntaxComment: "#6E7781", SyntaxKeyword: "#CF222E",
++		SyntaxFunction: "#8250DF", SyntaxVariable: "#953800",
++		SyntaxString: "#0A3069", SyntaxNumber: "#0550AE",
++		SyntaxType: "#0550AE", SyntaxOperator: "#CF222E",
++		SyntaxPunctuation: "#1F2328",
++	}
++	t.fillLegacy()
++	return t
++}()
++
++// BuiltinThemes maps theme names to their Theme values.
++var BuiltinThemes = map[string]Theme{
++	"dark":       Dark,
++	"light":      Light,
++	"catppuccin": Catppuccin,
++	"dracula":    Dracula,
++	"nord":       Nord,
++	"tokyonight": TokyoNight,
++	"gruvbox":    Gruvbox,
++	"monokai":    Monokai,
++	"solarized":  Solarized,
++	"rosepine":   RosePine,
++	"one-dark":   OneDark,
++	"github":     GitHub,
++}
++
++// ThemeNames returns sorted theme name list.
++func ThemeNames() []string {
++	return []string{
++		"dark", "light", "catppuccin", "dracula", "nord", "tokyonight",
++		"gruvbox", "monokai", "solarized", "rosepine", "one-dark", "github",
++	}
++}
++
++// ResolveTheme loads a theme by name (built-in) or from a JSON file path.
++func ResolveTheme(nameOrPath string) Theme {
++	if nameOrPath == "" {
++		return Dark
++	}
++	lower := strings.ToLower(nameOrPath)
++	if t, ok := BuiltinThemes[lower]; ok {
++		return t
++	}
++	if t, err := LoadThemeFromFile(nameOrPath); err == nil {
++		return t
++	}
++	return Dark
++}
++
++// themeJSON is the on-disk JSON format (matching the TS schema simplified for dark-only).
++type themeJSON struct {
++	Defs  map[string]string    `json:"defs"`
++	Theme map[string]jsonColor `json:"theme"`
++}
++
++// jsonColor can be a plain string or {dark:"...", light:"..."}.
++type jsonColor struct {
++	value string
++	dark  string
++	light string
++}
++
++func (c *jsonColor) UnmarshalJSON(data []byte) error {
++	var s string
++	if err := json.Unmarshal(data, &s); err == nil {
++		c.value = s
++		return nil
++	}
++	var obj struct {
++		Dark  string `json:"dark"`
++		Light string `json:"light"`
++	}
++	if err := json.Unmarshal(data, &obj); err != nil {
++		return err
++	}
++	c.dark = obj.Dark
++	c.light = obj.Light
++	return nil
++}
++
++func (c jsonColor) resolve(defs map[string]string, preferDark bool) string {
++	raw := c.value
++	if raw == "" {
++		if preferDark {
++			raw = c.dark
++		} else {
++			raw = c.light
++		}
++	}
++	if raw == "" {
++		raw = c.dark
++	}
++	if v, ok := defs[raw]; ok {
++		return v
++	}
++	return raw
++}
++
++// LoadThemeFromFile reads a theme JSON file.
++func LoadThemeFromFile(path string) (Theme, error) {
++	data, err := os.ReadFile(path)
++	if err != nil {
++		return Dark, err
++	}
++	return ParseThemeJSON(data, true)
++}
++
++// ParseThemeJSON parses theme JSON bytes into a Theme.
++func ParseThemeJSON(data []byte, preferDark bool) (Theme, error) {
++	var tj themeJSON
++	if err := json.Unmarshal(data, &tj); err != nil {
++		return Dark, err
++	}
++
++	get := func(key string) lipgloss.Color {
++		if c, ok := tj.Theme[key]; ok {
++			return lipgloss.Color(c.resolve(tj.Defs, preferDark))
++		}
++		return ""
++	}
++
++	t := Theme{
++		Name:            "custom",
++		Primary:         get("primary"),
++		Secondary:       get("secondary"),
++		Accent:          get("accent"),
++		Error:           get("error"),
++		Warning:         get("warning"),
++		Success:         get("success"),
++		Info:            get("info"),
++		Text:            get("text"),
++		Subtle:          get("textMuted"),
++		Background:      get("background"),
++		BackgroundPanel: get("backgroundPanel"),
++		BackgroundElem:  get("backgroundElement"),
++		Border:          get("border"),
++		BorderActive:    get("borderActive"),
++		BorderSubtle:    get("borderSubtle"),
++		DiffAdded:       get("diffAdded"), DiffRemoved: get("diffRemoved"),
++		DiffContext: get("diffContext"), DiffHunkHeader: get("diffHunkHeader"),
++		DiffHighlightAdded: get("diffHighlightAdded"), DiffHighlightRemoved: get("diffHighlightRemoved"),
++		DiffAddedBg: get("diffAddedBg"), DiffRemovedBg: get("diffRemovedBg"),
++		DiffContextBg: get("diffContextBg"), DiffLineNumber: get("diffLineNumber"),
++		DiffAddedLineNumberBg: get("diffAddedLineNumberBg"), DiffRemovedLineNumberBg: get("diffRemovedLineNumberBg"),
++		SyntaxComment: get("syntaxComment"), SyntaxKeyword: get("syntaxKeyword"),
++		SyntaxFunction: get("syntaxFunction"), SyntaxVariable: get("syntaxVariable"),
++		SyntaxString: get("syntaxString"), SyntaxNumber: get("syntaxNumber"),
++		SyntaxType: get("syntaxType"), SyntaxOperator: get("syntaxOperator"),
++		SyntaxPunctuation: get("syntaxPunctuation"),
++	}
++	t.fillLegacy()
++	return t, nil
+ }

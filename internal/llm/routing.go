@@ -131,3 +131,8 @@ func (r *Router) ResolveDefault() (Provider, string, error) {
 func (r *Router) ResolveSmall() (Provider, string, error) {
 	return r.Resolve(r.SmallModel())
 }
+
+// SetDefault 在运行时切换默认模型（供 TUI /models 命令使用）。
+func (r *Router) SetDefault(ref ModelRef) {
+	r.DefaultRef = ref
+}

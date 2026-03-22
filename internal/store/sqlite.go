@@ -12,7 +12,8 @@ import (
 )
 
 type SQLite struct {
-	db *sql.DB
+	db   *sql.DB
+	path string
 }
 
 func Open(path string) (*SQLite, error) {
@@ -24,7 +25,7 @@ func Open(path string) (*SQLite, error) {
 		db.Close()
 		return nil, err
 	}
-	return &SQLite{db: db}, nil
+	return &SQLite{db: db, path: path}, nil
 }
 
 func (s *SQLite) Close() error {
@@ -243,6 +244,40 @@ func (s *SQLite) Usage(ctx context.Context, workspaceID, sessionID string) (int,
 		return 0, 0, err
 	}
 	return prompt, completion, nil
+}
+
+func (s *SQLite) DeleteSession(ctx context.Context, workspaceID, sessionID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, _ = tx.ExecContext(ctx, `DELETE FROM messages WHERE session_id=? AND workspace_id=?`, sessionID, workspaceID)
+	_, err = tx.ExecContext(ctx, `DELETE FROM sessions WHERE id=? AND workspace_id=?`, sessionID, workspaceID)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *SQLite) TotalUsage(ctx context.Context, workspaceID string, sinceDays int) (int, int, error) {
+	var prompt, completion int
+	q := `SELECT COALESCE(SUM(cost_prompt_tokens),0), COALESCE(SUM(cost_completion_tokens),0) FROM messages WHERE workspace_id=?`
+	args := []any{workspaceID}
+	if sinceDays > 0 {
+		q += ` AND created_at >= ?`
+		cutoff := time.Now().Unix() - int64(sinceDays*86400)
+		args = append(args, cutoff)
+	}
+	err := s.db.QueryRowContext(ctx, q, args...).Scan(&prompt, &completion)
+	if err != nil {
+		return 0, 0, err
+	}
+	return prompt, completion, nil
+}
+
+func (s *SQLite) DBPath() string {
+	return s.path
 }
 
 func newID() string {

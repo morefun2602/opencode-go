@@ -45,4 +45,7 @@ type Store interface {
 	SetTitle(ctx context.Context, workspaceID, sessionID, title string) error
 	SetArchived(ctx context.Context, workspaceID, sessionID string, archived bool) error
 	Usage(ctx context.Context, workspaceID, sessionID string) (prompt int, completion int, err error)
+	DeleteSession(ctx context.Context, workspaceID, sessionID string) error
+	TotalUsage(ctx context.Context, workspaceID string, sinceDays int) (prompt int, completion int, err error)
+	DBPath() string
 }

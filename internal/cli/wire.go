@@ -86,6 +86,9 @@ func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Sto
 	if err := plugin.StartAll(context.Background()); err != nil {
 		return nil, nil, err
 	}
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		return nil, nil, fmt.Errorf("create data dir %s: %w", cfg.DataDir, err)
+	}
 	path := filepath.Join(cfg.DataDir, "sqlite.db")
 	st, err := store.Open(path)
 	if err != nil {

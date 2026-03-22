@@ -968,6 +968,41 @@ func soMsgs2LLMMessages(rows []store.MessageRow) []llm.Message {
 	return out
 }
 
+// SetModel 在运行时切换默认 provider/model（格式："provider/model" 或 "model"）。
+func (e *Engine) SetModel(providerModel string) {
+	if e.Router != nil {
+		e.Router.SetDefault(llm.ParseModel(providerModel))
+	}
+}
+
+// CurrentModel 返回当前默认模型的字符串表示。
+func (e *Engine) CurrentModel() string {
+	if e.Router == nil {
+		return ""
+	}
+	ref := e.Router.DefaultModel()
+	if ref.ProviderID != "" && ref.ModelID != "" {
+		return ref.ProviderID + "/" + ref.ModelID
+	}
+	return ref.ModelID
+}
+
+// ListModels 返回所有已注册 provider 及其支持的 model 列表。
+func (e *Engine) ListModels() map[string][]string {
+	result := make(map[string][]string)
+	if e.Providers == nil {
+		return result
+	}
+	for _, name := range e.Providers.List() {
+		prov, err := e.Providers.Get(name)
+		if err != nil {
+			continue
+		}
+		result[name] = prov.Models()
+	}
+	return result
+}
+
 func (e *Engine) maybeAutoTitle(ctx context.Context, workspaceID, sessionID, userText string) {
 	prov, _ := e.resolveSmallProvider()
 	if prov == nil {

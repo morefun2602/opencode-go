@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,15 +17,27 @@ import (
 
 const DefaultUpstreamCompatRef = "0.0.0-placeholder-sync-with-upstream"
 
+// ProviderFile matches the original opencode provider config format.
+// JSON key in opencode.json: "provider": { "<name>": { "options": { ... } } }
 type ProviderFile struct {
-	APIKey  string `json:"api_key"`
-	BaseURL string `json:"base_url"`
-	Model   string `json:"model"`
-	Type    string `json:"type"`
+	Options struct {
+		APIKey  string `json:"apiKey"`
+		BaseURL string `json:"baseURL"`
+	} `json:"options"`
 }
 
+// InternalProvider is the runtime representation used by the engine.
+type InternalProvider struct {
+	APIKey  string
+	BaseURL string
+	Model   string
+	Type    string
+}
+
+// AgentFile matches the original opencode agent config format.
+// JSON key in opencode.json: "agent": { "<name>": { ... } }
 type AgentFile struct {
-	Name        string   `json:"name"`
+	Name        string   `json:"-"`
 	Description string   `json:"description"`
 	Tools       []string `json:"tools"`
 	Model       string   `json:"model"`
@@ -35,12 +49,23 @@ type AgentFile struct {
 	Subagent    bool     `json:"subagent"`
 }
 
+// MCPFile matches the original opencode MCP server config format.
+// JSON key in opencode.json: "mcp": { "<name>": { ... } }
+type MCPFile struct {
+	Type        string            `json:"type"`
+	Command     []string          `json:"command"`
+	URL         string            `json:"url"`
+	Enabled     *bool             `json:"enabled"`
+	Environment map[string]string `json:"environment"`
+}
+
+// MCPServerFile is the runtime representation used by the engine.
 type MCPServerFile struct {
 	Name      string   `json:"name"`
 	Command   string   `json:"command"`
-	Args      []string `json:"args"`
-	Transport string   `json:"transport"` // "stdio" | "sse" | "streamable_http"
-	URL       string   `json:"url"`
+	Args      []string `json:"args,omitempty"`
+	Transport string   `json:"transport"`
+	URL       string   `json:"url,omitempty"`
 }
 
 // InferTransport returns the effective transport for this MCP server config.
@@ -57,43 +82,49 @@ func (m MCPServerFile) InferTransport() string {
 	return "stdio"
 }
 
+// File is the JSON on-disk representation, fully compatible with original opencode.
 type File struct {
-	UpstreamCompatRef string `json:"upstream_compat_ref"`
-	Server            struct {
+	Schema            string `json:"$schema,omitempty"`
+	UpstreamCompatRef string `json:"upstream_compat_ref,omitempty"`
+
+	Server struct {
 		Listen    string `json:"listen"`
 		AuthToken string `json:"auth_token"`
 	} `json:"server"`
-	Workspace struct {
-		ID string `json:"id"`
-	} `json:"workspace"`
-	Go struct {
-		DataDir                string                  `json:"data_dir"`
-		LLMTimeout             string                  `json:"llm_timeout"`
-		LLMProvider            string                  `json:"llm_provider"`
-		WorkspaceRoot          string                  `json:"workspace_root"`
-		RequireWriteConfirm    bool                    `json:"require_write_confirm"`
-		BashTimeoutSec         int                     `json:"bash_timeout_sec"`
-		MaxOutputBytes         int                     `json:"max_output_bytes"`
-		CompactionTurns        int                     `json:"compaction_turns"`
-		LLMMaxRetries          int                     `json:"llm_max_retries"`
-		StructuredOutputSchema string                  `json:"structured_output_schema"`
-		MCPServers             []MCPServerFile         `json:"mcp_servers"`
-		MCPToolPrefix          string                  `json:"mcp_tool_prefix"`
-		Providers              map[string]ProviderFile `json:"providers"`
-		DefaultProvider        string                  `json:"default_provider"`
-		DefaultModel           string                  `json:"default_model"`
-		MaxToolRounds          int                     `json:"max_tool_rounds"`
-		Permissions            map[string]string       `json:"permissions"`
-		SkillsDir              string                  `json:"skills_dir"`
-		Agents                 []AgentFile             `json:"agents"`
-		Instructions           []string                `json:"instructions"`
-		RemoteConfigURL        string                  `json:"remote_config_url"`
-		Model                  string                  `json:"model"`
-		SmallModel             string                  `json:"small_model"`
-		Compaction             CompactionConfig        `json:"compaction"`
-		LSP                    LSPConfig               `json:"lsp"`
-		Skills                 SkillsConfig            `json:"skills"`
-	} `json:"x_opencode_go"`
+
+	// Original opencode top-level fields
+	Provider     map[string]ProviderFile `json:"provider"`
+	Model        string                  `json:"model"`
+	SmallModel   string                  `json:"small_model"`
+	MCP          map[string]MCPFile      `json:"mcp"`
+	Agent        map[string]AgentFile    `json:"agent"`
+	Permission   map[string]string       `json:"permission"`
+	Instructions []string                `json:"instructions"`
+	Skills       SkillsConfig            `json:"skills"`
+	Compaction   CompactionConfig        `json:"compaction"`
+	Lsp          map[string]LSPFile      `json:"lsp"`
+
+	// Go extension fields (optional, kept at top level)
+	DataDir                string `json:"data_dir,omitempty"`
+	WorkspaceID            string `json:"workspace_id,omitempty"`
+	WorkspaceRoot          string `json:"workspace_root,omitempty"`
+	BashTimeoutSec         int    `json:"bash_timeout_sec,omitempty"`
+	MaxOutputBytes         int    `json:"max_output_bytes,omitempty"`
+	MaxToolRounds          int    `json:"max_tool_rounds,omitempty"`
+	LLMMaxRetries          int    `json:"llm_max_retries,omitempty"`
+	LLMTimeout             string `json:"llm_timeout,omitempty"`
+	MCPToolPrefix          string `json:"mcp_tool_prefix,omitempty"`
+	RemoteConfigURL        string `json:"remote_config_url,omitempty"`
+	SkillsDir              string `json:"skills_dir,omitempty"`
+	CompactionTurns        int    `json:"compaction_turns,omitempty"`
+	RequireWriteConfirm    bool   `json:"require_write_confirm,omitempty"`
+	StructuredOutputSchema string `json:"structured_output_schema,omitempty"`
+}
+
+// LSPFile matches the original opencode LSP config format.
+// JSON key: "lsp": { "<language>": { "command": ["cmd", "args..."] } } or false
+type LSPFile struct {
+	Command []string `json:"command"`
 }
 
 type CompactionConfig struct {
@@ -124,13 +155,13 @@ func (c CompactionConfig) ReservedTokens() int {
 }
 
 type LSPServer struct {
-	Language string   `json:"language"`
-	Command  string   `json:"command"`
-	Args     []string `json:"args"`
+	Language string
+	Command  string
+	Args     []string
 }
 
 type LSPConfig struct {
-	Servers []LSPServer `json:"servers"`
+	Servers []LSPServer
 }
 
 type SkillsConfig struct {
@@ -138,6 +169,7 @@ type SkillsConfig struct {
 	URLs  []string `json:"urls"`
 }
 
+// Config is the runtime configuration consumed by the engine.
 type Config struct {
 	UpstreamCompatRef      string
 	Listen                 string
@@ -156,7 +188,7 @@ type Config struct {
 	StructuredOutputSchema string
 	MCPServers             []MCPServerFile
 	MCPToolPrefix          string
-	Providers              map[string]ProviderFile
+	Providers              map[string]InternalProvider
 	DefaultProvider        string
 	DefaultModel           string
 	MaxToolRounds          int
@@ -177,7 +209,7 @@ func Defaults() Config {
 		UpstreamCompatRef: DefaultUpstreamCompatRef,
 		Listen:            "127.0.0.1:8080",
 		WorkspaceID:       "default",
-		DataDir:           ".opencode-go",
+		DataDir:           ".opencode",
 		LLMTimeout:        60 * time.Second,
 		WorkspaceRoot:     ".",
 		BashTimeoutSec:    30,
@@ -210,6 +242,7 @@ func isLoopbackOnly(addr string) bool {
 	return h == "127.0.0.1" || h == "::1" || h == "localhost"
 }
 
+// merge applies a parsed File onto the runtime Config.
 func merge(dst *Config, src File) {
 	if src.UpstreamCompatRef != "" {
 		dst.UpstreamCompatRef = src.UpstreamCompatRef
@@ -220,96 +253,156 @@ func merge(dst *Config, src File) {
 	if src.Server.AuthToken != "" {
 		dst.AuthToken = src.Server.AuthToken
 	}
-	if src.Workspace.ID != "" {
-		dst.WorkspaceID = src.Workspace.ID
-	}
-	g := src.Go
-	if g.DataDir != "" {
-		dst.DataDir = g.DataDir
-	}
-	if g.LLMTimeout != "" {
-		if d, err := time.ParseDuration(g.LLMTimeout); err == nil {
-			dst.LLMTimeout = d
+
+	// Provider: convert original opencode format to internal
+	if len(src.Provider) > 0 {
+		if dst.Providers == nil {
+			dst.Providers = make(map[string]InternalProvider)
+		}
+		for name, pf := range src.Provider {
+			p := dst.Providers[name]
+			if pf.Options.APIKey != "" {
+				p.APIKey = pf.Options.APIKey
+			}
+			if pf.Options.BaseURL != "" {
+				p.BaseURL = pf.Options.BaseURL
+			}
+			if p.Type == "" {
+				p.Type = name
+			}
+			dst.Providers[name] = p
 		}
 	}
-	if g.LLMProvider != "" {
-		dst.LLMProvider = g.LLMProvider
+
+	if src.Model != "" {
+		dst.Model = src.Model
 	}
-	if g.WorkspaceRoot != "" {
-		dst.WorkspaceRoot = g.WorkspaceRoot
+	if src.SmallModel != "" {
+		dst.SmallModel = src.SmallModel
 	}
-	dst.RequireWriteConfirm = g.RequireWriteConfirm
-	if g.BashTimeoutSec > 0 {
-		dst.BashTimeoutSec = g.BashTimeoutSec
-	}
-	if g.MaxOutputBytes > 0 {
-		dst.MaxOutputBytes = g.MaxOutputBytes
-	}
-	if g.CompactionTurns > 0 {
-		dst.CompactionTurns = g.CompactionTurns
-	}
-	if g.LLMMaxRetries > 0 {
-		dst.LLMMaxRetries = g.LLMMaxRetries
-	}
-	if g.StructuredOutputSchema != "" {
-		dst.StructuredOutputSchema = g.StructuredOutputSchema
-	}
-	if len(g.MCPServers) > 0 {
-		dst.MCPServers = append([]MCPServerFile(nil), g.MCPServers...)
-	}
-	if g.MCPToolPrefix != "" {
-		dst.MCPToolPrefix = g.MCPToolPrefix
-	}
-	if len(g.Providers) > 0 {
-		dst.Providers = make(map[string]ProviderFile, len(g.Providers))
-		for k, v := range g.Providers {
-			dst.Providers[k] = v
+
+	// MCP: convert map[name]MCPFile to []MCPServerFile
+	if len(src.MCP) > 0 {
+		dst.MCPServers = nil
+		for name, mf := range src.MCP {
+			if mf.Enabled != nil && !*mf.Enabled {
+				continue
+			}
+			s := MCPServerFile{Name: name}
+			if mf.URL != "" {
+				s.URL = mf.URL
+				s.Transport = "streamable_http"
+				if mf.Type == "remote" {
+					s.Transport = "streamable_http"
+				}
+			}
+			if len(mf.Command) > 0 {
+				s.Command = mf.Command[0]
+				if len(mf.Command) > 1 {
+					s.Args = mf.Command[1:]
+				}
+				s.Transport = "stdio"
+			}
+			if mf.Type != "" && s.Transport == "" {
+				switch mf.Type {
+				case "local":
+					s.Transport = "stdio"
+				case "remote":
+					s.Transport = "streamable_http"
+				}
+			}
+			dst.MCPServers = append(dst.MCPServers, s)
 		}
 	}
-	if g.DefaultProvider != "" {
-		dst.DefaultProvider = g.DefaultProvider
+
+	// Agent: convert map[name]AgentFile to []AgentFile
+	if len(src.Agent) > 0 {
+		dst.Agents = nil
+		for name, af := range src.Agent {
+			af.Name = name
+			dst.Agents = append(dst.Agents, af)
+		}
 	}
-	if g.DefaultModel != "" {
-		dst.DefaultModel = g.DefaultModel
-	}
-	if g.MaxToolRounds > 0 {
-		dst.MaxToolRounds = g.MaxToolRounds
-	}
-	if len(g.Permissions) > 0 {
-		dst.Permissions = make(map[string]string, len(g.Permissions))
-		for k, v := range g.Permissions {
+
+	if len(src.Permission) > 0 {
+		dst.Permissions = make(map[string]string, len(src.Permission))
+		for k, v := range src.Permission {
 			dst.Permissions[k] = v
 		}
 	}
-	if g.SkillsDir != "" {
-		dst.SkillsDir = g.SkillsDir
+
+	if len(src.Instructions) > 0 {
+		dst.Instructions = append([]string(nil), src.Instructions...)
 	}
-	if len(g.Agents) > 0 {
-		dst.Agents = append([]AgentFile(nil), g.Agents...)
+
+	if src.Compaction.Auto != nil || src.Compaction.Reserved > 0 || src.Compaction.Prune != nil {
+		dst.Compaction = src.Compaction
 	}
-	if len(g.Instructions) > 0 {
-		dst.Instructions = append([]string(nil), g.Instructions...)
+
+	// LSP: convert map[language]LSPFile to LSPConfig
+	if len(src.Lsp) > 0 {
+		dst.LSP.Servers = nil
+		for lang, lf := range src.Lsp {
+			if len(lf.Command) == 0 {
+				continue
+			}
+			s := LSPServer{Language: lang, Command: lf.Command[0]}
+			if len(lf.Command) > 1 {
+				s.Args = lf.Command[1:]
+			}
+			dst.LSP.Servers = append(dst.LSP.Servers, s)
+		}
 	}
-	if g.RemoteConfigURL != "" {
-		dst.RemoteConfigURL = g.RemoteConfigURL
+
+	if len(src.Skills.Paths) > 0 {
+		dst.Skills.Paths = append([]string(nil), src.Skills.Paths...)
 	}
-	if g.Model != "" {
-		dst.Model = g.Model
+	if len(src.Skills.URLs) > 0 {
+		dst.Skills.URLs = append([]string(nil), src.Skills.URLs...)
 	}
-	if g.SmallModel != "" {
-		dst.SmallModel = g.SmallModel
+
+	// Go extension fields
+	if src.DataDir != "" {
+		dst.DataDir = src.DataDir
 	}
-	if g.Compaction.Auto != nil || g.Compaction.Reserved > 0 || g.Compaction.Prune != nil {
-		dst.Compaction = g.Compaction
+	if src.WorkspaceID != "" {
+		dst.WorkspaceID = src.WorkspaceID
 	}
-	if len(g.LSP.Servers) > 0 {
-		dst.LSP = g.LSP
+	if src.WorkspaceRoot != "" {
+		dst.WorkspaceRoot = src.WorkspaceRoot
 	}
-	if len(g.Skills.Paths) > 0 {
-		dst.Skills.Paths = append([]string(nil), g.Skills.Paths...)
+	if src.LLMTimeout != "" {
+		if d, err := time.ParseDuration(src.LLMTimeout); err == nil {
+			dst.LLMTimeout = d
+		}
 	}
-	if len(g.Skills.URLs) > 0 {
-		dst.Skills.URLs = append([]string(nil), g.Skills.URLs...)
+	if src.BashTimeoutSec > 0 {
+		dst.BashTimeoutSec = src.BashTimeoutSec
+	}
+	if src.MaxOutputBytes > 0 {
+		dst.MaxOutputBytes = src.MaxOutputBytes
+	}
+	if src.MaxToolRounds > 0 {
+		dst.MaxToolRounds = src.MaxToolRounds
+	}
+	if src.LLMMaxRetries > 0 {
+		dst.LLMMaxRetries = src.LLMMaxRetries
+	}
+	if src.CompactionTurns > 0 {
+		dst.CompactionTurns = src.CompactionTurns
+	}
+	if src.MCPToolPrefix != "" {
+		dst.MCPToolPrefix = src.MCPToolPrefix
+	}
+	if src.RemoteConfigURL != "" {
+		dst.RemoteConfigURL = src.RemoteConfigURL
+	}
+	dst.RequireWriteConfirm = src.RequireWriteConfirm
+	if src.StructuredOutputSchema != "" {
+		dst.StructuredOutputSchema = src.StructuredOutputSchema
+	}
+	if src.SkillsDir != "" {
+		dst.SkillsDir = src.SkillsDir
 	}
 }
 
@@ -334,66 +427,141 @@ func applyEnv(c *Config) {
 			c.LLMTimeout = d
 		}
 	}
+	if v := os.Getenv("OPENCODE_BASH_TIMEOUT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.BashTimeoutSec = n
+		}
+	}
 	if v := os.Getenv("OPENAI_API_KEY"); v != "" {
 		if c.Providers == nil {
-			c.Providers = map[string]ProviderFile{}
+			c.Providers = map[string]InternalProvider{}
 		}
 		p := c.Providers["openai"]
 		if p.APIKey == "" {
 			p.APIKey = v
+			if p.Type == "" {
+				p.Type = "openai"
+			}
 			c.Providers["openai"] = p
 		}
 	}
 	if v := os.Getenv("ANTHROPIC_API_KEY"); v != "" {
 		if c.Providers == nil {
-			c.Providers = map[string]ProviderFile{}
+			c.Providers = map[string]InternalProvider{}
 		}
 		p := c.Providers["anthropic"]
 		if p.APIKey == "" {
 			p.APIKey = v
+			if p.Type == "" {
+				p.Type = "anthropic"
+			}
 			c.Providers["anthropic"] = p
+		}
+	}
+	if v := os.Getenv("OPENCODE_API_KEY"); v != "" {
+		if c.Providers == nil {
+			c.Providers = map[string]InternalProvider{}
+		}
+		p := c.Providers["opencode"]
+		if p.APIKey == "" {
+			p.APIKey = v
+			if p.Type == "" {
+				p.Type = "opencode"
+			}
+			c.Providers["opencode"] = p
 		}
 	}
 }
 
+// loadFile reads and parses a JSON/JSONC config file at path.
+func loadFile(path string) (File, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return File{}, err
+	}
+	standardized, err := hujson.Standardize(b)
+	if err != nil {
+		return File{}, fmt.Errorf("parse config %s: %w", path, err)
+	}
+	var f File
+	if err := json.Unmarshal(standardized, &f); err != nil {
+		return File{}, fmt.Errorf("parse config %s: %w", path, err)
+	}
+	return f, nil
+}
+
+// Load reads configuration from multiple config files (lowest to highest priority),
+// then overlays environment variables and CLI flags.
+//
+// Search order (later overrides earlier):
+//  1. ~/.config/opencode/opencode.json (user global)
+//  2. .opencode/opencode.jsonc (workspace)
+//  3. opencode.json (CWD)
+//  4. $OPENCODE_CONFIG or explicit configPath (highest)
 func Load(configPath string, flags *Config) (Config, error) {
 	c := Defaults()
-	path := configPath
-	if path == "" {
-		path = os.Getenv("OPENCODE_CONFIG")
-	}
-	if path == "" {
-		if _, err := os.Stat("opencode.json"); err == nil {
-			path = "opencode.json"
+
+	// 1. User global config
+	if home, err := os.UserHomeDir(); err == nil {
+		for _, name := range []string{"opencode.json", "opencode.jsonc"} {
+			p := filepath.Join(home, ".config", "opencode", name)
+			if f, err := loadFile(p); err == nil {
+				merge(&c, f)
+				if c.ConfigPath == "" {
+					c.ConfigPath = p
+				}
+				break
+			}
 		}
 	}
-	if path != "" {
-		b, err := os.ReadFile(path)
+
+	// 2. Workspace .opencode/ directory
+	for _, name := range []string{"opencode.jsonc", "opencode.json"} {
+		p := filepath.Join(".opencode", name)
+		if f, err := loadFile(p); err == nil {
+			merge(&c, f)
+			c.ConfigPath = p
+			break
+		}
+	}
+
+	// 3. CWD opencode.json
+	if _, err := os.Stat("opencode.json"); err == nil {
+		if f, err := loadFile("opencode.json"); err == nil {
+			merge(&c, f)
+			c.ConfigPath = "opencode.json"
+		}
+	}
+
+	// 4. Explicit path or $OPENCODE_CONFIG
+	explicit := configPath
+	if explicit == "" {
+		explicit = os.Getenv("OPENCODE_CONFIG")
+	}
+	if explicit != "" {
+		f, err := loadFile(explicit)
 		if err != nil && !os.IsNotExist(err) {
 			return c, err
 		}
 		if err == nil {
-			standardized, hjErr := hujson.Standardize(b)
-			if hjErr != nil {
-				return c, fmt.Errorf("parse config %s: %w", path, hjErr)
-			}
-			var f File
-			if err := json.Unmarshal(standardized, &f); err != nil {
-				return c, fmt.Errorf("parse config %s: %w", path, err)
-			}
 			merge(&c, f)
-			c.ConfigPath = path
+			c.ConfigPath = explicit
 		}
 	}
+
+	// Remote config fallback
 	if c.RemoteConfigURL != "" {
 		if rf, err := fetchRemote(c.RemoteConfigURL); err == nil {
 			mergeRemoteFallback(&c, rf)
 		}
 	}
+
 	applyEnv(&c)
+
 	if flags != nil {
 		mergeFlags(&c, flags)
 	}
+
 	return c, c.Validate()
 }
 
@@ -419,42 +587,59 @@ func fetchRemote(url string) (File, error) {
 }
 
 func mergeRemoteFallback(dst *Config, remote File) {
-	r := remote.Go
-	if dst.LLMProvider == "" && r.LLMProvider != "" {
-		dst.LLMProvider = r.LLMProvider
+	if dst.Model == "" && remote.Model != "" {
+		dst.Model = remote.Model
 	}
-	if dst.DefaultProvider == "" && r.DefaultProvider != "" {
-		dst.DefaultProvider = r.DefaultProvider
+	if dst.SmallModel == "" && remote.SmallModel != "" {
+		dst.SmallModel = remote.SmallModel
 	}
-	if dst.DefaultModel == "" && r.DefaultModel != "" {
-		dst.DefaultModel = r.DefaultModel
-	}
-	if len(dst.Providers) == 0 && len(r.Providers) > 0 {
-		dst.Providers = make(map[string]ProviderFile, len(r.Providers))
-		for k, v := range r.Providers {
-			dst.Providers[k] = v
+	if len(dst.Providers) == 0 && len(remote.Provider) > 0 {
+		dst.Providers = make(map[string]InternalProvider, len(remote.Provider))
+		for name, pf := range remote.Provider {
+			dst.Providers[name] = InternalProvider{
+				APIKey:  pf.Options.APIKey,
+				BaseURL: pf.Options.BaseURL,
+				Type:    name,
+			}
 		}
 	}
-	if len(dst.MCPServers) == 0 && len(r.MCPServers) > 0 {
-		dst.MCPServers = append([]MCPServerFile(nil), r.MCPServers...)
+	if len(dst.MCPServers) == 0 && len(remote.MCP) > 0 {
+		for name, mf := range remote.MCP {
+			if mf.Enabled != nil && !*mf.Enabled {
+				continue
+			}
+			s := MCPServerFile{Name: name}
+			if len(mf.Command) > 0 {
+				s.Command = mf.Command[0]
+				if len(mf.Command) > 1 {
+					s.Args = mf.Command[1:]
+				}
+				s.Transport = "stdio"
+			}
+			if mf.URL != "" {
+				s.URL = mf.URL
+				s.Transport = "streamable_http"
+			}
+			dst.MCPServers = append(dst.MCPServers, s)
+		}
 	}
-	if len(dst.Permissions) == 0 && len(r.Permissions) > 0 {
-		dst.Permissions = make(map[string]string, len(r.Permissions))
-		for k, v := range r.Permissions {
+	if len(dst.Permissions) == 0 && len(remote.Permission) > 0 {
+		dst.Permissions = make(map[string]string, len(remote.Permission))
+		for k, v := range remote.Permission {
 			dst.Permissions[k] = v
 		}
 	}
-	if len(dst.Agents) == 0 && len(r.Agents) > 0 {
-		dst.Agents = append([]AgentFile(nil), r.Agents...)
+	if len(dst.Agents) == 0 && len(remote.Agent) > 0 {
+		for name, af := range remote.Agent {
+			af.Name = name
+			dst.Agents = append(dst.Agents, af)
+		}
 	}
-	if len(dst.Instructions) == 0 && len(r.Instructions) > 0 {
-		dst.Instructions = append([]string(nil), r.Instructions...)
+	if len(dst.Instructions) == 0 && len(remote.Instructions) > 0 {
+		dst.Instructions = append([]string(nil), remote.Instructions...)
 	}
-	if dst.SkillsDir == "" && r.SkillsDir != "" {
-		dst.SkillsDir = r.SkillsDir
-	}
-	if dst.StructuredOutputSchema == "" && r.StructuredOutputSchema != "" {
-		dst.StructuredOutputSchema = r.StructuredOutputSchema
+	if dst.StructuredOutputSchema == "" && remote.StructuredOutputSchema != "" {
+		dst.StructuredOutputSchema = remote.StructuredOutputSchema
 	}
 }
 
@@ -497,5 +682,11 @@ func mergeFlags(dst *Config, flags *Config) {
 	}
 	if flags.MaxToolRounds > 0 {
 		dst.MaxToolRounds = flags.MaxToolRounds
+	}
+	if flags.Model != "" {
+		dst.Model = flags.Model
+	}
+	if flags.SmallModel != "" {
+		dst.SmallModel = flags.SmallModel
 	}
 }

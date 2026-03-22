@@ -1,61 +1,108 @@
 package tui
 
 import (
-	"strings"
+	"fmt"
 
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/morefun2602/opencode-go/internal/store"
 )
 
 type chatModel struct {
-	scroll   int
+	viewport viewport.Model
 	renderer *glamour.TermRenderer
+	sticky   bool
+	ready    bool
 }
 
-func newChat(theme Theme) chatModel {
+func newChat(theme Theme, width, height int) chatModel {
 	style := "dark"
 	if theme.Name == "light" {
 		style = "light"
 	}
-	r, _ := glamour.NewTermRenderer(glamour.WithStylePath(style), glamour.WithWordWrap(80))
-	return chatModel{renderer: r}
+	r, err := glamour.NewTermRenderer(glamour.WithStylePath(style), glamour.WithWordWrap(80))
+	if err != nil {
+		r = nil
+	}
+
+	vp := viewport.New(width, height)
+	vp.MouseWheelEnabled = true
+
+	return chatModel{
+		viewport: vp,
+		renderer: r,
+		sticky:   true,
+	}
 }
 
-func (c chatModel) View(msgs []store.MessageRow, w, h int, theme Theme) string {
-	var lines []string
-	for _, m := range msgs {
-		var prefix string
-		var style lipgloss.Style
-		switch m.Role {
-		case "user":
-			prefix = "You"
-			style = lipgloss.NewStyle().Foreground(theme.Primary).Bold(true)
-		case "assistant":
-			prefix = "Assistant"
-			style = lipgloss.NewStyle().Foreground(theme.Secondary).Bold(true)
-		case "tool":
-			prefix = "Tool"
-			style = lipgloss.NewStyle().Foreground(theme.Subtle).Italic(true)
-		default:
-			continue
-		}
-		header := style.Render(prefix)
-		body := m.Body
-		if m.Role == "assistant" && c.renderer != nil {
-			if rendered, err := c.renderer.Render(body); err == nil {
-				body = strings.TrimSpace(rendered)
-			}
-		}
-		if len(body) > 500 {
-			body = body[:500] + "…"
-		}
-		lines = append(lines, header+"\n"+body+"\n")
-	}
-	content := strings.Join(lines, "\n")
+func (c *chatModel) SetSize(w, h int) {
+	c.viewport.Width = w
+	c.viewport.Height = h
+	c.ready = true
+}
 
-	return lipgloss.NewStyle().
-		Width(w).
-		Height(h).
-		Render(content)
+// Update forwards tea.Msg to the viewport so mouse wheel scrolling works.
+func (c *chatModel) Update(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+	c.viewport, cmd = c.viewport.Update(msg)
+	if c.viewport.AtBottom() {
+		c.sticky = true
+	} else if _, ok := msg.(tea.MouseMsg); ok {
+		c.sticky = false
+	}
+	return cmd
+}
+
+// Refresh rebuilds all content from the messages list.
+func (c *chatModel) Refresh(msgs []store.MessageRow, streamBuf string, theme Theme) {
+	blocks := BuildRenderBlocks(msgs, theme, c.viewport.Width, c.renderer)
+	content := BlocksToString(blocks)
+	if streamBuf != "" {
+		content += streamBuf + "\n"
+	}
+	c.viewport.SetContent(content)
+	if c.sticky {
+		c.viewport.GotoBottom()
+	}
+}
+
+func (c *chatModel) View() string {
+	if !c.ready {
+		return ""
+	}
+	return c.viewport.View()
+}
+
+func (c *chatModel) ScrollUp(lines int) {
+	c.sticky = false
+	c.viewport.LineUp(lines)
+}
+
+func (c *chatModel) ScrollDown(lines int) {
+	c.viewport.LineDown(lines)
+	if c.viewport.AtBottom() {
+		c.sticky = true
+	}
+}
+
+func (c *chatModel) PageUp() {
+	c.sticky = false
+	c.viewport.HalfViewUp()
+}
+
+func (c *chatModel) PageDown() {
+	c.viewport.HalfViewDown()
+	if c.viewport.AtBottom() {
+		c.sticky = true
+	}
+}
+
+func (c *chatModel) GotoBottom() {
+	c.sticky = true
+	c.viewport.GotoBottom()
+}
+
+func (c *chatModel) ScrollPercent() string {
+	return fmt.Sprintf("%d%%", int(c.viewport.ScrollPercent()*100))
 }

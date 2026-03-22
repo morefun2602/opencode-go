@@ -56,7 +56,7 @@ func (s sidebarModel) View(sessions []store.SessionRow, current string, w, h int
 	for i, sess := range sessions {
 		label := sess.Title
 		if label == "" {
-			label = truncate(sess.ID, w-4)
+			label = truncateStr(sess.ID, w-4)
 		}
 		if label == "" {
 			label = fmt.Sprintf("session-%d", i+1)
