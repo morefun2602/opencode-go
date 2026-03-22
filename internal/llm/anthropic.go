@@ -39,7 +39,7 @@ func (a *Anthropic) Models() []string {
 func (a *Anthropic) Chat(ctx context.Context, msgs []Message, tools []ToolDef) (*Response, error) {
 	msgs = TransformMessages(msgs, "anthropic")
 	sys, content := a.splitSystem(msgs)
-	params := a.params(sys, content, tools)
+	params := a.params(a.model, sys, content, tools)
 	resp, err := a.client.Messages.New(ctx, params)
 	if err != nil {
 		return nil, err
@@ -50,13 +50,53 @@ func (a *Anthropic) Chat(ctx context.Context, msgs []Message, tools []ToolDef) (
 func (a *Anthropic) ChatStream(ctx context.Context, msgs []Message, tools []ToolDef, chunk func(*Response) error) (*Response, error) {
 	msgs = TransformMessages(msgs, "anthropic")
 	sys, content := a.splitSystem(msgs)
-	params := a.params(sys, content, tools)
+	params := a.params(a.model, sys, content, tools)
 	stream := a.client.Messages.NewStreaming(ctx, params)
 	var acc anthropic.Message
 	for stream.Next() {
 		evt := stream.Current()
 		_ = acc.Accumulate(evt)
 		partial := &Response{Message: Message{Role: "assistant"}, Model: a.model, FinishReason: "stop"}
+		if evt.Delta.Text != "" {
+			partial.Message.Content = evt.Delta.Text
+		}
+		if err := chunk(partial); err != nil {
+			return nil, err
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return nil, err
+	}
+	return a.mapResponse(&acc), nil
+}
+
+func (a *Anthropic) ChatWithModel(ctx context.Context, model string, msgs []Message, tools []ToolDef) (*Response, error) {
+	if model == "" {
+		model = a.model
+	}
+	msgs = TransformMessages(msgs, "anthropic")
+	sys, content := a.splitSystem(msgs)
+	params := a.params(model, sys, content, tools)
+	resp, err := a.client.Messages.New(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return a.mapResponse(resp), nil
+}
+
+func (a *Anthropic) ChatStreamWithModel(ctx context.Context, model string, msgs []Message, tools []ToolDef, chunk func(*Response) error) (*Response, error) {
+	if model == "" {
+		model = a.model
+	}
+	msgs = TransformMessages(msgs, "anthropic")
+	sys, content := a.splitSystem(msgs)
+	params := a.params(model, sys, content, tools)
+	stream := a.client.Messages.NewStreaming(ctx, params)
+	var acc anthropic.Message
+	for stream.Next() {
+		evt := stream.Current()
+		_ = acc.Accumulate(evt)
+		partial := &Response{Message: Message{Role: "assistant"}, Model: model, FinishReason: "stop"}
 		if evt.Delta.Text != "" {
 			partial.Message.Content = evt.Delta.Text
 		}
@@ -86,9 +126,9 @@ func (a *Anthropic) splitSystem(msgs []Message) (string, []Message) {
 	return sys, rest
 }
 
-func (a *Anthropic) params(sys string, msgs []Message, tools []ToolDef) anthropic.MessageNewParams {
+func (a *Anthropic) params(model string, sys string, msgs []Message, tools []ToolDef) anthropic.MessageNewParams {
 	p := anthropic.MessageNewParams{
-		Model:     anthropic.Model(a.model),
+		Model:     anthropic.Model(model),
 		MaxTokens: int64(4096),
 		Messages:  a.mapMessages(msgs),
 	}
@@ -194,3 +234,4 @@ func (a *Anthropic) mapResponse(resp *anthropic.Message) *Response {
 }
 
 var _ Provider = (*Anthropic)(nil)
+var _ ProviderWithModel = (*Anthropic)(nil)

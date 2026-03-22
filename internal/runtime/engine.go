@@ -191,7 +191,8 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 			roundTdefs = nil
 		}
 
-		resp, err := e.callWithRetry(ctx, sessionID, msgs, roundTdefs)
+		runProv, runModel := e.resolveProviderForAgent(agent)
+		resp, err := e.callWithRetry(ctx, sessionID, runProv, runModel, msgs, roundTdefs)
 		if err != nil {
 			if llm.Classify(err) == llm.ContextOverflow && e.Compaction != nil {
 				if e.Log != nil {
@@ -202,7 +203,7 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 					return "", fmt.Errorf("compaction failed: %w", cErr)
 				}
 				msgs = compacted
-				resp, err = e.callWithRetry(ctx, sessionID, msgs, roundTdefs)
+				resp, err = e.callWithRetry(ctx, sessionID, runProv, runModel, msgs, roundTdefs)
 				if err != nil {
 					return "", err
 				}
@@ -407,7 +408,8 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 			roundTdefs = nil
 		}
 
-		resp, err := e.streamWithRetry(ctx, sessionID, msgs, roundTdefs, chunk)
+		runProv, runModel := e.resolveProviderForAgent(agent)
+		resp, err := e.streamWithRetry(ctx, sessionID, runProv, runModel, msgs, roundTdefs, chunk)
 		if err != nil {
 			if llm.Classify(err) == llm.ContextOverflow && e.Compaction != nil {
 				compacted, cErr := e.Compaction.Process(ctx, prov, workspaceID, sessionID, msgs, 5)
@@ -415,7 +417,7 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 					return fmt.Errorf("compaction failed: %w", cErr)
 				}
 				msgs = compacted
-				resp, err = e.streamWithRetry(ctx, sessionID, msgs, roundTdefs, chunk)
+				resp, err = e.streamWithRetry(ctx, sessionID, runProv, runModel, msgs, roundTdefs, chunk)
 				if err != nil {
 					return err
 				}
@@ -584,15 +586,23 @@ func (e *Engine) executeTool(ctx context.Context, workspaceID, sessionID string,
 	return out, false
 }
 
-func (e *Engine) callWithRetry(ctx context.Context, sessionID string, msgs []llm.Message, tdefs []llm.ToolDef) (*llm.Response, error) {
-	prov, _ := e.resolveProvider()
+func (e *Engine) callWithRetry(ctx context.Context, sessionID string, prov llm.Provider, model string, msgs []llm.Message, tdefs []llm.ToolDef) (*llm.Response, error) {
+	if prov == nil {
+		prov, model = e.resolveProvider()
+	}
 	attempts := e.LLMMaxRetries + 1
 	if attempts < 1 {
 		attempts = 1
 	}
 	var last error
 	for i := 0; i < attempts; i++ {
-		resp, err := prov.Chat(ctx, msgs, tdefs)
+		var resp *llm.Response
+		var err error
+		if pm, ok := prov.(llm.ProviderWithModel); ok {
+			resp, err = pm.ChatWithModel(ctx, model, msgs, tdefs)
+		} else {
+			resp, err = prov.Chat(ctx, msgs, tdefs)
+		}
 		if err == nil {
 			return resp, nil
 		}
@@ -622,8 +632,10 @@ func (e *Engine) callWithRetry(ctx context.Context, sessionID string, msgs []llm
 	return nil, last
 }
 
-func (e *Engine) streamWithRetry(ctx context.Context, sessionID string, msgs []llm.Message, tdefs []llm.ToolDef, chunk func(string) error) (*llm.Response, error) {
-	prov, _ := e.resolveProvider()
+func (e *Engine) streamWithRetry(ctx context.Context, sessionID string, prov llm.Provider, model string, msgs []llm.Message, tdefs []llm.ToolDef, chunk func(string) error) (*llm.Response, error) {
+	if prov == nil {
+		prov, model = e.resolveProvider()
+	}
 	attempts := e.LLMMaxRetries + 1
 	if attempts < 1 {
 		attempts = 1
@@ -636,7 +648,13 @@ func (e *Engine) streamWithRetry(ctx context.Context, sessionID string, msgs []l
 	}
 	var last error
 	for i := 0; i < attempts; i++ {
-		resp, err := prov.ChatStream(ctx, msgs, tdefs, streamCb)
+		var resp *llm.Response
+		var err error
+		if pm, ok := prov.(llm.ProviderWithModel); ok {
+			resp, err = pm.ChatStreamWithModel(ctx, model, msgs, tdefs, streamCb)
+		} else {
+			resp, err = prov.ChatStream(ctx, msgs, tdefs, streamCb)
+		}
 		if err == nil {
 			return resp, nil
 		}
@@ -925,7 +943,8 @@ func (e *Engine) requestStructuredOutput(ctx context.Context, sessionID string, 
 	}
 	soMsgs := append(msgs, soPromptMsg)
 
-	resp, err := e.callWithRetry(ctx, sessionID, soMsgs, []llm.ToolDef{soTool})
+	prov, model := e.resolveProvider()
+	resp, err := e.callWithRetry(ctx, sessionID, prov, model, soMsgs, []llm.ToolDef{soTool})
 	if err != nil {
 		if e.Log != nil {
 			e.Log.Error("structured_output_fail", "session_id", sessionID, "err", err)

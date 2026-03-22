@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"context"
 	"testing"
 )
 
@@ -36,10 +37,10 @@ func (f *fakeRouterProvider) Name() string { return f.name }
 func (f *fakeRouterProvider) Models() []string {
 	return f.models
 }
-func (f *fakeRouterProvider) Chat(_ interface{ Deadline() (interface{}, bool) }, _ []Message, _ []ToolDef) (*Response, error) {
+func (f *fakeRouterProvider) Chat(_ context.Context, _ []Message, _ []ToolDef) (*Response, error) {
 	return nil, nil
 }
-func (f *fakeRouterProvider) ChatStream(_ interface{ Deadline() (interface{}, bool) }, _ []Message, _ []ToolDef, _ func(*Response) error) (*Response, error) {
+func (f *fakeRouterProvider) ChatStream(_ context.Context, _ []Message, _ []ToolDef, _ func(*Response) error) (*Response, error) {
 	return nil, nil
 }
 
@@ -84,4 +85,21 @@ func TestRouterResolve(t *testing.T) {
 		t.Fatal("provider should not be nil")
 	}
 	_ = model
+}
+
+func TestRouterSetDefaultAffectsResolveDefault(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register("openai", func() Provider {
+		return &fakeRouterProvider{name: "openai", models: []string{"gpt-4o", "gpt-5-nano"}}
+	})
+
+	r := NewRouter(reg, "openai/gpt-4o", "")
+	r.SetDefault(ParseModel("openai/gpt-5-nano"))
+	_, model, err := r.ResolveDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model != "gpt-5-nano" {
+		t.Fatalf("want gpt-5-nano, got %q", model)
+	}
 }

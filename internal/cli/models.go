@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 
 	"github.com/spf13/cobra"
 
@@ -36,23 +37,24 @@ func newModelsCmd() *cobra.Command {
 				filter = args[0]
 			}
 
-			providers := eng.Providers.List()
+			modelMap := eng.ListModels()
+			if len(modelMap) == 0 {
+				return nil
+			}
+			providers := make([]string, 0, len(modelMap))
+			for name := range modelMap {
+				providers = append(providers, name)
+			}
+			sort.Strings(providers)
 			for _, name := range providers {
 				if filter != "" && name != filter {
 					continue
 				}
-				prov, err := eng.Providers.Get(name)
-				if err != nil {
-					continue
+				models := append([]string(nil), modelMap[name]...)
+				sort.Strings(models)
+				for _, model := range models {
+					fmt.Printf("%-20s %s\n", name, model)
 				}
-				model := ""
-				if mc, ok := prov.(interface{ ModelID() string }); ok {
-					model = mc.ModelID()
-				}
-				if model == "" {
-					model = "(default)"
-				}
-				fmt.Printf("%-20s %s\n", name, model)
 			}
 
 			dm := eng.Router.DefaultModel()

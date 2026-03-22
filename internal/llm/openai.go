@@ -41,7 +41,7 @@ func (o *OpenAI) Models() []string {
 }
 
 func (o *OpenAI) Chat(ctx context.Context, msgs []Message, tools []ToolDef) (*Response, error) {
-	params := o.params(msgs, tools)
+	params := o.params(o.model, msgs, tools)
 	comp, err := o.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func (o *OpenAI) Chat(ctx context.Context, msgs []Message, tools []ToolDef) (*Re
 }
 
 func (o *OpenAI) ChatStream(ctx context.Context, msgs []Message, tools []ToolDef, chunk func(*Response) error) (*Response, error) {
-	params := o.params(msgs, tools)
+	params := o.params(o.model, msgs, tools)
 	stream := o.client.Chat.Completions.NewStreaming(ctx, params)
 	acc := openai.ChatCompletionAccumulator{}
 	for stream.Next() {
@@ -76,9 +76,51 @@ func (o *OpenAI) ChatStream(ctx context.Context, msgs []Message, tools []ToolDef
 	return o.mapChoice(acc.Choices[0], string(acc.Model)), nil
 }
 
-func (o *OpenAI) params(msgs []Message, tools []ToolDef) openai.ChatCompletionNewParams {
+func (o *OpenAI) ChatWithModel(ctx context.Context, model string, msgs []Message, tools []ToolDef) (*Response, error) {
+	if model == "" {
+		model = o.model
+	}
+	params := o.params(model, msgs, tools)
+	comp, err := o.client.Chat.Completions.New(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return o.mapResponse(comp), nil
+}
+
+func (o *OpenAI) ChatStreamWithModel(ctx context.Context, model string, msgs []Message, tools []ToolDef, chunk func(*Response) error) (*Response, error) {
+	if model == "" {
+		model = o.model
+	}
+	params := o.params(model, msgs, tools)
+	stream := o.client.Chat.Completions.NewStreaming(ctx, params)
+	acc := openai.ChatCompletionAccumulator{}
+	for stream.Next() {
+		delta := stream.Current()
+		acc.AddChunk(delta)
+		partial := &Response{Model: string(delta.Model), FinishReason: "stop"}
+		for _, ch := range delta.Choices {
+			if ch.Delta.Content != "" {
+				partial.Message.Role = "assistant"
+				partial.Message.Content = ch.Delta.Content
+			}
+		}
+		if err := chunk(partial); err != nil {
+			return nil, err
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return nil, err
+	}
+	if len(acc.Choices) == 0 {
+		return &Response{Model: model, FinishReason: "stop", Message: Message{Role: "assistant"}}, nil
+	}
+	return o.mapChoice(acc.Choices[0], string(acc.Model)), nil
+}
+
+func (o *OpenAI) params(model string, msgs []Message, tools []ToolDef) openai.ChatCompletionNewParams {
 	p := openai.ChatCompletionNewParams{
-		Model:    openai.ChatModel(o.model),
+		Model:    openai.ChatModel(model),
 		Messages: o.mapMessages(msgs),
 	}
 	if len(tools) > 0 {
@@ -194,3 +236,4 @@ func mapFinishReason(r string) string {
 }
 
 var _ Provider = (*OpenAI)(nil)
+var _ ProviderWithModel = (*OpenAI)(nil)

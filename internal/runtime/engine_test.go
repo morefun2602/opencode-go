@@ -395,3 +395,120 @@ func TestNoopToolInjectionNoToolCalls(t *testing.T) {
 		t.Fatalf("should not inject noop when no tool_call in history, got %v", result)
 	}
 }
+
+type modelAwareProvider struct {
+	name       string
+	models     []string
+	usedModels []string
+}
+
+func (m *modelAwareProvider) Name() string     { return m.name }
+func (m *modelAwareProvider) Models() []string { return m.models }
+func (m *modelAwareProvider) Chat(ctx context.Context, msgs []llm.Message, td []llm.ToolDef) (*llm.Response, error) {
+	// Legacy path should not be used after fix, but keep behavior.
+	m.usedModels = append(m.usedModels, "legacy")
+	return &llm.Response{
+		Message:      llm.Message{Role: "assistant", Content: "ok"},
+		FinishReason: "stop",
+		Model:        "legacy",
+	}, nil
+}
+func (m *modelAwareProvider) ChatStream(ctx context.Context, msgs []llm.Message, td []llm.ToolDef, chunk func(*llm.Response) error) (*llm.Response, error) {
+	resp, _ := m.Chat(ctx, msgs, td)
+	_ = chunk(resp)
+	return resp, nil
+}
+func (m *modelAwareProvider) ChatWithModel(ctx context.Context, model string, msgs []llm.Message, td []llm.ToolDef) (*llm.Response, error) {
+	m.usedModels = append(m.usedModels, model)
+	return &llm.Response{
+		Message:      llm.Message{Role: "assistant", Content: "ok"},
+		FinishReason: "stop",
+		Model:        model,
+	}, nil
+}
+func (m *modelAwareProvider) ChatStreamWithModel(ctx context.Context, model string, msgs []llm.Message, td []llm.ToolDef, chunk func(*llm.Response) error) (*llm.Response, error) {
+	m.usedModels = append(m.usedModels, model)
+	resp := &llm.Response{
+		Message:      llm.Message{Role: "assistant", Content: "ok"},
+		FinishReason: "stop",
+		Model:        model,
+	}
+	_ = chunk(resp)
+	return resp, nil
+}
+
+func TestSetModelAffectsCompleteTurnModelRouting(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	p := filepath.Join(t.TempDir(), "test.db")
+	st, err := store.Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	prov := &modelAwareProvider{name: "opencode", models: []string{"glm-5-free", "gpt-5-nano"}}
+	reg := llm.NewRegistry()
+	reg.Register("opencode", func() llm.Provider { return prov })
+	router := llm.NewRouter(reg, "opencode/glm-5-free", "")
+
+	eng := &Engine{
+		Store:         st,
+		Router:        router,
+		Providers:     reg,
+		Log:           log,
+		MaxToolRounds: 2,
+	}
+
+	eng.SetModel("opencode/gpt-5-nano")
+
+	ctx := context.Background()
+	sid, _ := st.CreateSession(ctx, "ws")
+	_, err = eng.CompleteTurn(ctx, "ws", sid, "hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prov.usedModels) == 0 {
+		t.Fatal("expected model-aware provider to be called")
+	}
+	if prov.usedModels[0] != "gpt-5-nano" {
+		t.Fatalf("expected routed model gpt-5-nano, got %q", prov.usedModels[0])
+	}
+}
+
+func TestSetModelAffectsCompleteTurnStreamModelRouting(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	p := filepath.Join(t.TempDir(), "test.db")
+	st, err := store.Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	prov := &modelAwareProvider{name: "opencode", models: []string{"glm-5-free", "gpt-5-nano"}}
+	reg := llm.NewRegistry()
+	reg.Register("opencode", func() llm.Provider { return prov })
+	router := llm.NewRouter(reg, "opencode/glm-5-free", "")
+
+	eng := &Engine{
+		Store:         st,
+		Router:        router,
+		Providers:     reg,
+		Log:           log,
+		MaxToolRounds: 2,
+	}
+
+	eng.SetModel("opencode/gpt-5-nano")
+
+	ctx := context.Background()
+	sid, _ := st.CreateSession(ctx, "ws")
+	err = eng.CompleteTurnStream(ctx, "ws", sid, "hello", func(string) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prov.usedModels) == 0 {
+		t.Fatal("expected model-aware provider to be called")
+	}
+	if prov.usedModels[0] != "gpt-5-nano" {
+		t.Fatalf("expected routed model gpt-5-nano, got %q", prov.usedModels[0])
+	}
+}

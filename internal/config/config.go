@@ -96,6 +96,8 @@ type File struct {
 	Provider     map[string]ProviderFile `json:"provider"`
 	Model        string                  `json:"model"`
 	SmallModel   string                  `json:"small_model"`
+	EnabledProviders  []string           `json:"enabled_providers"`
+	DisabledProviders []string           `json:"disabled_providers"`
 	MCP          map[string]MCPFile      `json:"mcp"`
 	Agent        map[string]AgentFile    `json:"agent"`
 	Permission   map[string]string       `json:"permission"`
@@ -199,6 +201,8 @@ type Config struct {
 	RemoteConfigURL        string
 	Model                  string
 	SmallModel             string
+	EnabledProviders       []string
+	DisabledProviders      []string
 	Compaction             CompactionConfig
 	LSP                    LSPConfig
 	Skills                 SkillsConfig
@@ -279,6 +283,12 @@ func merge(dst *Config, src File) {
 	}
 	if src.SmallModel != "" {
 		dst.SmallModel = src.SmallModel
+	}
+	if len(src.EnabledProviders) > 0 {
+		dst.EnabledProviders = append([]string(nil), src.EnabledProviders...)
+	}
+	if len(src.DisabledProviders) > 0 {
+		dst.DisabledProviders = append([]string(nil), src.DisabledProviders...)
 	}
 
 	// MCP: convert map[name]MCPFile to []MCPServerFile
@@ -593,6 +603,12 @@ func mergeRemoteFallback(dst *Config, remote File) {
 	if dst.SmallModel == "" && remote.SmallModel != "" {
 		dst.SmallModel = remote.SmallModel
 	}
+	if len(dst.EnabledProviders) == 0 && len(remote.EnabledProviders) > 0 {
+		dst.EnabledProviders = append([]string(nil), remote.EnabledProviders...)
+	}
+	if len(dst.DisabledProviders) == 0 && len(remote.DisabledProviders) > 0 {
+		dst.DisabledProviders = append([]string(nil), remote.DisabledProviders...)
+	}
 	if len(dst.Providers) == 0 && len(remote.Provider) > 0 {
 		dst.Providers = make(map[string]InternalProvider, len(remote.Provider))
 		for name, pf := range remote.Provider {
@@ -688,5 +704,11 @@ func mergeFlags(dst *Config, flags *Config) {
 	}
 	if flags.SmallModel != "" {
 		dst.SmallModel = flags.SmallModel
+	}
+	if len(flags.EnabledProviders) > 0 {
+		dst.EnabledProviders = append([]string(nil), flags.EnabledProviders...)
+	}
+	if len(flags.DisabledProviders) > 0 {
+		dst.DisabledProviders = append([]string(nil), flags.DisabledProviders...)
 	}
 }

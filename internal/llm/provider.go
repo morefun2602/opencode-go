@@ -45,3 +45,11 @@ type Provider interface {
 	Chat(ctx context.Context, msgs []Message, tools []ToolDef) (*Response, error)
 	ChatStream(ctx context.Context, msgs []Message, tools []ToolDef, chunk func(*Response) error) (*Response, error)
 }
+
+// ProviderWithModel is an optional extension that lets callers override
+// the model per request while keeping provider instances reusable.
+type ProviderWithModel interface {
+	Provider
+	ChatWithModel(ctx context.Context, model string, msgs []Message, tools []ToolDef) (*Response, error)
+	ChatStreamWithModel(ctx context.Context, model string, msgs []Message, tools []ToolDef, chunk func(*Response) error) (*Response, error)
+}

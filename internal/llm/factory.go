@@ -6,6 +6,7 @@ type ProviderConfig struct {
 	APIKey  string
 	BaseURL string
 	Model   string
+	Models  []string
 	Type    string
 }
 
@@ -54,18 +55,32 @@ func NewProvider(name string, cfg ProviderConfig) Provider {
 		}
 		model := cfg.Model
 		if model == "" {
-			model = opencodeDefaultModels[0]
+			if len(cfg.Models) > 0 {
+				model = cfg.Models[0]
+			} else {
+				model = opencodeDefaultModels[0]
+			}
+		}
+		models := opencodeDefaultModels
+		if len(cfg.Models) > 0 {
+			models = cfg.Models
 		}
 		return NewOpenAICompatibleWithModels(name, OpenAIConfig{
 			APIKey: cfg.APIKey, BaseURL: cfg.BaseURL, Model: model,
-		}, opencodeDefaultModels)
+		}, models)
 	case "openai-compatible":
 		if cfg.APIKey == "" {
 			cfg.APIKey = os.Getenv("OPENAI_API_KEY")
 		}
+		if len(cfg.Models) > 0 {
+			return NewOpenAICompatibleWithModels(name, OpenAIConfig{APIKey: cfg.APIKey, BaseURL: cfg.BaseURL, Model: cfg.Model}, cfg.Models)
+		}
 		return NewOpenAICompatible(name, OpenAIConfig{APIKey: cfg.APIKey, BaseURL: cfg.BaseURL, Model: cfg.Model})
 	default:
 		if cfg.BaseURL != "" {
+			if len(cfg.Models) > 0 {
+				return NewOpenAICompatibleWithModels(name, OpenAIConfig{APIKey: cfg.APIKey, BaseURL: cfg.BaseURL, Model: cfg.Model}, cfg.Models)
+			}
 			return NewOpenAICompatible(name, OpenAIConfig{APIKey: cfg.APIKey, BaseURL: cfg.BaseURL, Model: cfg.Model})
 		}
 		return Stub{}

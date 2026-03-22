@@ -18,6 +18,7 @@ import (
 	"github.com/morefun2602/opencode-go/internal/permission"
 	"github.com/morefun2602/opencode-go/internal/plugin"
 	"github.com/morefun2602/opencode-go/internal/policy"
+	"github.com/morefun2602/opencode-go/internal/providerstate"
 	"github.com/morefun2602/opencode-go/internal/runtime"
 	"github.com/morefun2602/opencode-go/internal/skill"
 	"github.com/morefun2602/opencode-go/internal/snapshot"
@@ -95,26 +96,43 @@ func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Sto
 		return nil, nil, err
 	}
 
+	ps, _ := providerstate.Build(context.Background(), cfg, providerstate.BuildOptions{
+		DisableModelsFetch: os.Getenv("OPENCODE_DISABLE_MODELS_FETCH") != "",
+		ModelsURL:          os.Getenv("OPENCODE_MODELS_URL"),
+	})
+
 	registry := llm.NewRegistry()
-	for pname, pf := range cfg.Providers {
-		n, f := pname, pf
+	for pname, ap := range ps.Providers {
+		n, a := pname, ap
+		model := ""
+		if len(a.Models) > 0 {
+			model = a.Models[0]
+		}
 		p := llm.NewProvider(n, llm.ProviderConfig{
-			APIKey:  f.APIKey,
-			BaseURL: f.BaseURL,
-			Model:   f.Model,
-			Type:    f.Type,
+			APIKey:  a.APIKey,
+			BaseURL: a.BaseURL,
+			Model:   model,
+			Models:  a.Models,
+			Type:    a.Type,
 		})
 		registry.Register(n, func() llm.Provider { return p })
 	}
 
 	defaultModel := cfg.Model
+	if defaultModel == "" {
+		defaultModel = ps.Default
+	}
 	if defaultModel == "" && cfg.DefaultModel != "" {
 		defaultModel = cfg.DefaultModel
 	}
 	if defaultModel == "" && cfg.DefaultProvider != "" {
 		defaultModel = cfg.DefaultProvider
 	}
-	router := llm.NewRouter(registry, defaultModel, cfg.SmallModel)
+	smallModel := cfg.SmallModel
+	if smallModel == "" {
+		smallModel = ps.Small
+	}
+	router := llm.NewRouter(registry, defaultModel, smallModel)
 
 	var prov llm.Provider
 	p, _, err := router.ResolveDefault()

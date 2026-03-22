@@ -33,4 +33,13 @@ func (c *OpenAICompatible) ChatStream(ctx context.Context, msgs []Message, tools
 	return c.inner.ChatStream(ctx, msgs, tools, chunk)
 }
 
+func (c *OpenAICompatible) ChatWithModel(ctx context.Context, model string, msgs []Message, tools []ToolDef) (*Response, error) {
+	return c.inner.ChatWithModel(ctx, model, msgs, tools)
+}
+
+func (c *OpenAICompatible) ChatStreamWithModel(ctx context.Context, model string, msgs []Message, tools []ToolDef, chunk func(*Response) error) (*Response, error) {
+	return c.inner.ChatStreamWithModel(ctx, model, msgs, tools, chunk)
+}
+
 var _ Provider = (*OpenAICompatible)(nil)
+var _ ProviderWithModel = (*OpenAICompatible)(nil)
