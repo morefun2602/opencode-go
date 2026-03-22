@@ -73,6 +73,12 @@ func (r *Registry) Run(ctx context.Context, corrID, sessionID, name string, args
 		return "", fmt.Errorf("unknown tool: %q", name)
 	}
 	ctx = context.WithValue(ctx, SessionKey, sessionID)
+	if err := validateArgs(name, t.Schema, args); err != nil {
+		if r.log != nil {
+			r.log.Warn("tool validation failed", "tool", name, "corr_id", corrID, "session_id", sessionID, "err", err)
+		}
+		return "", err
+	}
 	out, err := t.Fn(ctx, args)
 	if err != nil {
 		if r.log != nil {

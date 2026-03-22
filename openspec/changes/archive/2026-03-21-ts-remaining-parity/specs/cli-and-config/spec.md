@@ -4,7 +4,7 @@
 
 ### Requirement: Agent 模式配置
 
-系统 MUST 支持 `x_opencode_go.agents` 配置项，为自定义 Agent 模式定义名称、允许的工具列表、模型、温度等参数。
+系统 MUST 支持 `agents` 配置项，为自定义 Agent 模式定义名称、允许的工具列表、模型、温度等参数。
 
 #### Scenario: 自定义 Agent 加载
 
@@ -13,7 +13,7 @@
 
 ### Requirement: 全局指令注入
 
-系统 MUST 支持 `x_opencode_go.instructions` 配置项（字符串数组），其内容 MUST 在每个会话的系统提示头部注入。
+系统 MUST 支持 `instructions` 配置项（字符串数组），其内容 MUST 在每个会话的系统提示头部注入。
 
 #### Scenario: 指令注入
 

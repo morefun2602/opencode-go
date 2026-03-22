@@ -27,6 +27,11 @@ func SubagentNameFromContext(ctx context.Context) (string, bool) {
 	return name, ok && name != ""
 }
 
+// WithSubagentContext injects subagent selection into context.
+func WithSubagentContext(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, subagentKey{}, name)
+}
+
 // SubagentInfo describes a sub-agent available for the task tool.
 type SubagentInfo struct {
 	Name        string
@@ -116,7 +121,7 @@ func RegisterTask(
 			}
 
 			sub := context.WithValue(ctx, depthKey{}, depth+1)
-			sub = context.WithValue(sub, subagentKey{}, agentName)
+			sub = WithSubagentContext(sub, agentName)
 			result, err := runner.CompleteTurn(sub, workspaceID, sid, prompt)
 			if err != nil {
 				return "", err

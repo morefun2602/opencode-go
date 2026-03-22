@@ -4,7 +4,7 @@
 
 ### Requirement: 三态权限模型
 
-系统 MUST 为每个工具支持 `allow`（默认）、`ask`、`deny` 三种权限，通过 `x_opencode_go.permissions` 配置。
+系统 MUST 为每个工具支持 `allow`（默认）、`ask`、`deny` 三种权限，通过 `permissions` 配置。
 
 #### Scenario: deny 阻止执行
 

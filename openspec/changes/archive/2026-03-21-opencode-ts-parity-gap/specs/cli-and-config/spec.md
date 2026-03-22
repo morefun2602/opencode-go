@@ -22,11 +22,11 @@
 - **WHEN** 用户调用文档化的交互子命令且配置有效
 - **THEN** 系统 MUST 进入交互循环且 MUST 响应中断信号按文档退出
 
-### Requirement: Go 扩展键命名空间
+### Requirement: Go 扩展键命名
 
-新增仅 Go 实现使用的配置键 MUST 位于 `x_opencode_go` 命名空间（或后续与上游约定的前缀），且 MUST 在文档中列出；MUST NOT 占用上游已定义键名。
+新增仅 Go 实现使用的配置键 MUST 位于顶层并在文档中列出；MUST NOT 占用上游已定义键名。
 
 #### Scenario: 新键不冲突
 
-- **WHEN** 配置包含 `x_opencode_go` 下新字段
+- **WHEN** 配置包含新增 Go 扩展字段
 - **THEN** 解析 MUST 成功且 MUST 不影响上游键语义

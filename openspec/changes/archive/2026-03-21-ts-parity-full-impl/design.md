@@ -105,7 +105,7 @@ type Provider interface {
 
 - **理由**：这是 ReAct 的标准模式，上游 TS 侧亦如此。将循环放在 Engine 而非 Provider 中，使 Provider 只负责单次 HTTP 调用。
 - **备选**：Provider 内部做循环 — **否决**（Provider 不应知道工具执行细节）。
-- **`MaxToolRounds`**：可配置（`x_opencode_go.max_tool_rounds`），默认 25（与上游一致），防止无限循环。
+- **`MaxToolRounds`**：可配置（`max_tool_rounds`），默认 25（与上游一致），防止无限循环。
 
 ### 3. 消息持久化（schema v3）
 
@@ -138,7 +138,7 @@ ALTER TABLE messages ADD COLUMN tool_call_id TEXT NOT NULL DEFAULT '';
 - 将 `[]llm.ToolDef` 映射到 SDK 的 `openai.ChatCompletionToolParam`
 - 非流式调用 `client.Chat.Completions.New()`；流式调用 `client.Chat.Completions.NewStreaming()`
 - SDK 自行处理 SSE 解析、HTTP 重试、错误类型化，省去手动拼接逻辑
-- API key 优先级：`x_opencode_go.providers.openai.api_key` 配置 > `OPENAI_API_KEY` 环境变量（SDK 默认行为）
+- API key 优先级：`providers.openai.api_key` 配置 > `OPENAI_API_KEY` 环境变量（SDK 默认行为）
 
 - **理由**：`openai/openai-go` 是 OpenAI 官方维护的 Go SDK，类型安全、wire format 自动跟进 API 变更，减少自行维护序列化/反序列化的负担。
 - **备选**：直接 `net/http` 调用 — **否决**（需自行处理 SSE 解析、流式 tool_calls delta 拼接、错误体解析等，工作量与维护成本显著高于引入 SDK）。
@@ -150,7 +150,7 @@ ALTER TABLE messages ADD COLUMN tool_call_id TEXT NOT NULL DEFAULT '';
 - 使用 `anthropic.NewClient()` 创建客户端，SDK 自动从 `ANTHROPIC_API_KEY` 环境变量读取 key
 - Anthropic 的 tool_use 与 OpenAI 格式不同（`tool_use` content block + `tool_result` content block），SDK 提供类型化的 `anthropic.ContentBlockParam` 进行映射
 - 非流式调用 `client.Messages.New()`；流式调用 `client.Messages.NewStreaming()`
-- API key 优先级：`x_opencode_go.providers.anthropic.api_key` 配置 > `ANTHROPIC_API_KEY` 环境变量
+- API key 优先级：`providers.anthropic.api_key` 配置 > `ANTHROPIC_API_KEY` 环境变量
 
 - **理由**：`anthropics/anthropic-sdk-go` 是 Anthropic 官方维护的 Go SDK，与 `openai-go` 设计风格一致（均基于 `stainless` 生成），tool_use 的复杂映射由 SDK 类型系统保证正确性。
 - **备选**：直接 `net/http` — **否决**（Anthropic tool_use 的 content block 结构比 OpenAI 更复杂，手动解析容易出错且难以跟进 API 演进）。
@@ -239,7 +239,7 @@ ALTER TABLE messages ADD COLUMN tool_call_id TEXT NOT NULL DEFAULT '';
 
 **决策**：扩展 `internal/policy` 为 per-tool 权限。
 
-- 配置 `x_opencode_go.permissions`：`map[string]string`（工具名 → `"ask"` / `"allow"` / `"deny"`），默认全部 `"allow"`
+- 配置 `permissions`：`map[string]string`（工具名 → `"ask"` / `"allow"` / `"deny"`），默认全部 `"allow"`
 - `ask` 模式下，Engine 在执行 tool_call 前调用 `Confirm` 回调（由 REPL 注入）
 - `deny` 直接返回错误
 
@@ -253,7 +253,7 @@ ALTER TABLE messages ADD COLUMN tool_call_id TEXT NOT NULL DEFAULT '';
 
 ### 12. 配置扩展
 
-**决策**：在 `x_opencode_go` 下新增：
+**决策**：使用顶层配置新增：
 
 ```json
 {

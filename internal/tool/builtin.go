@@ -183,6 +183,7 @@ func RegisterBuiltin(reg *tools.Registry, pol *policy.Policy, skills []skill.Ski
 	registerEdit(reg, root, watcher)
 	registerWebfetch(reg, bashSec)
 	registerTodowrite(reg)
+	registerTodoread(reg)
 	registerApplyPatch(reg, root, watcher)
 	registerQuestion(reg)
 	searchURL := ""

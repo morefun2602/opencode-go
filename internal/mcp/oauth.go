@@ -268,3 +268,15 @@ func (p *OAuthProvider) saveToken(t *OAuthToken) error {
 	}
 	return os.WriteFile(path, b, 0o600)
 }
+
+// InvalidateToken removes locally stored OAuth credentials.
+// Used when a remote server rejects an apparently valid token (for example 401).
+func (p *OAuthProvider) InvalidateToken() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	err := os.Remove(p.tokenPath())
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}

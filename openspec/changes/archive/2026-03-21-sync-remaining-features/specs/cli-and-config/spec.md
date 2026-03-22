@@ -16,7 +16,7 @@
 
 ### Requirement: 默认模型配置
 
-系统 MUST 支持 `x_opencode_go.model` 配置项（字符串，`"provider/model"` 格式），指定默认使用的模型。未配置时 MUST 回退到第一个可用 Provider 的第一个模型。
+系统 MUST 支持 `model` 配置项（字符串，`"provider/model"` 格式），指定默认使用的模型。未配置时 MUST 回退到第一个可用 Provider 的第一个模型。
 
 #### Scenario: 指定默认模型
 
@@ -25,7 +25,7 @@
 
 ### Requirement: 小模型配置
 
-系统 MUST 支持 `x_opencode_go.small_model` 配置项（字符串，`"provider/model"` 格式），指定用于 compaction/title/summary 等内部任务的小模型。
+系统 MUST 支持 `small_model` 配置项（字符串，`"provider/model"` 格式），指定用于 compaction/title/summary 等内部任务的小模型。
 
 #### Scenario: 指定小模型
 
@@ -34,7 +34,7 @@
 
 ### Requirement: InstructionPrompt 文件配置
 
-系统 MUST 支持 `x_opencode_go.instructions` 配置项（字符串数组），每项可为文件路径或 URL。文件路径 MUST 相对于工作区根目录解析。URL MUST 通过 HTTP GET 加载。
+系统 MUST 支持 `instructions` 配置项（字符串数组），每项可为文件路径或 URL。文件路径 MUST 相对于工作区根目录解析。URL MUST 通过 HTTP GET 加载。
 
 #### Scenario: 文件路径指令
 
@@ -48,7 +48,7 @@
 
 ### Requirement: Compaction 配置
 
-系统 MUST 支持 `x_opencode_go.compaction` 配置项，包含以下子字段：
+系统 MUST 支持 `compaction` 配置项，包含以下子字段：
 - `auto`（bool，默认 true）：是否自动触发 compaction
 - `reserved`（int，默认 20000）：预留 token 数
 - `prune`（bool，默认 true）：是否在 compaction 前裁剪旧 tool 输出
@@ -65,7 +65,7 @@
 
 ### Requirement: LSP 服务器配置
 
-系统 MUST 支持 `x_opencode_go.lsp` 配置项，包含 `servers` 数组，每项包含 `language`（语言标识）、`command`（启动命令）、`args`（参数数组）字段。
+系统 MUST 支持 `lsp` 配置项，包含 `servers` 数组，每项包含 `language`（语言标识）、`command`（启动命令）、`args`（参数数组）字段。
 
 #### Scenario: 配置 Go LSP
 
@@ -76,11 +76,11 @@
 
 ### Requirement: 与上游配置一致
 
-对于两种实现中均存在的设置，系统 MUST 使用与上游 OpenCode 相同的配置文件名、文件格式与顶层键路径。仅 Go 实现使用的设置 MUST 在 `x_opencode_go` 命名空间下。新增以下 `x_opencode_go` 键：`providers`（OpenAI/Anthropic 配置含 api_key/base_url/model）、`default_provider`、`default_model`、`max_tool_rounds`、`permissions`（per-tool ask/allow/deny）、`skills_dir`、`mcp_servers`（含 transport/command/url/args 字段）、`model`（默认模型）、`small_model`（小模型）、`instructions`（指令文件/URL 数组）、`compaction`（auto/reserved/prune）、`lsp`（语言服务器配置）。配置文件 MUST 支持 JSONC 格式。
+对于两种实现中均存在的设置，系统 MUST 使用与上游 OpenCode 相同的配置文件名、文件格式与顶层键路径。Go 扩展键也 MUST 位于顶层并文档化。新增键：`providers`（OpenAI/Anthropic 配置含 api_key/base_url/model）、`default_provider`、`default_model`、`max_tool_rounds`、`permissions`（per-tool ask/allow/deny）、`skills_dir`、`mcp_servers`（含 transport/command/url/args 字段）、`model`（默认模型）、`small_model`（小模型）、`instructions`（指令文件/URL 数组）、`compaction`（auto/reserved/prune）、`lsp`（语言服务器配置）。配置文件 MUST 支持 JSONC 格式。
 
 #### Scenario: 新增配置键可加载
 
-- **WHEN** 配置文件包含 `x_opencode_go.providers.openai.api_key` 键
+- **WHEN** 配置文件包含 `providers.openai.api_key` 键
 - **THEN** 系统 MUST 解析并用于初始化 OpenAI 提供商
 
 #### Scenario: JSONC 格式可加载

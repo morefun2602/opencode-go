@@ -4,11 +4,11 @@
 
 ### Requirement: 与上游配置一致
 
-对于两种实现中均存在的设置，系统 MUST 使用与上游 OpenCode 相同的配置文件名、文件格式与顶层键路径。仅 Go 实现使用的设置 MUST 在 `x_opencode_go` 命名空间下。新增以下 `x_opencode_go` 键：`providers`（OpenAI/Anthropic 配置含 api_key/base_url/model）、`default_provider`、`default_model`、`max_tool_rounds`、`permissions`（per-tool ask/allow/deny）、`skills_dir`、`mcp_servers`（含 transport/command/url/args 字段）。
+对于两种实现中均存在的设置，系统 MUST 使用与上游 OpenCode 相同的配置文件名、文件格式与顶层键路径。Go 扩展键也 MUST 位于顶层并文档化。新增键：`providers`（OpenAI/Anthropic 配置含 api_key/base_url/model）、`default_provider`、`default_model`、`max_tool_rounds`、`permissions`（per-tool ask/allow/deny）、`skills_dir`、`mcp_servers`（含 transport/command/url/args 字段）。
 
 #### Scenario: 新增配置键可加载
 
-- **WHEN** 配置文件包含 `x_opencode_go.providers.openai.api_key` 键
+- **WHEN** 配置文件包含 `providers.openai.api_key` 键
 - **THEN** 系统 MUST 解析并用于初始化 OpenAI 提供商
 
 #### Scenario: 共享工作区配置可加载
@@ -48,7 +48,7 @@
 
 ### Requirement: MCP 服务端配置
 
-`x_opencode_go.mcp_servers` 数组中的每个条目 MUST 支持 `name`、`transport`（stdio/sse/streamable_http）、`command`（stdio 用）、`args`（stdio 用）、`url`（SSE/Streamable HTTP 用）字段。
+`mcp_servers` 数组中的每个条目 MUST 支持 `name`、`transport`（stdio/sse/streamable_http）、`command`（stdio 用）、`args`（stdio 用）、`url`（SSE/Streamable HTTP 用）字段。
 
 #### Scenario: MCP 配置解析
 

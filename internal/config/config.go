@@ -57,15 +57,30 @@ type MCPFile struct {
 	URL         string            `json:"url"`
 	Enabled     *bool             `json:"enabled"`
 	Environment map[string]string `json:"environment"`
+	Headers     map[string]string `json:"headers"`
+	TimeoutSec  int               `json:"timeout_sec"`
+	OAuth       *MCPOAuthFile     `json:"oauth"`
 }
 
 // MCPServerFile is the runtime representation used by the engine.
 type MCPServerFile struct {
-	Name      string   `json:"name"`
-	Command   string   `json:"command"`
-	Args      []string `json:"args,omitempty"`
-	Transport string   `json:"transport"`
-	URL       string   `json:"url,omitempty"`
+	Name       string            `json:"name"`
+	Command    string            `json:"command"`
+	Args       []string          `json:"args,omitempty"`
+	Transport  string            `json:"transport"`
+	URL        string            `json:"url,omitempty"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	TimeoutSec int               `json:"timeout_sec,omitempty"`
+	OAuth      *MCPOAuthFile     `json:"oauth,omitempty"`
+}
+
+type MCPOAuthFile struct {
+	AuthorizationURL string `json:"authorization_url"`
+	TokenURL         string `json:"token_url"`
+	ClientID         string `json:"client_id"`
+	ClientSecret     string `json:"client_secret"`
+	Scopes           string `json:"scopes"`
+	RedirectPort     int    `json:"redirect_port"`
 }
 
 // InferTransport returns the effective transport for this MCP server config.
@@ -93,18 +108,18 @@ type File struct {
 	} `json:"server"`
 
 	// Original opencode top-level fields
-	Provider     map[string]ProviderFile `json:"provider"`
-	Model        string                  `json:"model"`
-	SmallModel   string                  `json:"small_model"`
-	EnabledProviders  []string           `json:"enabled_providers"`
-	DisabledProviders []string           `json:"disabled_providers"`
-	MCP          map[string]MCPFile      `json:"mcp"`
-	Agent        map[string]AgentFile    `json:"agent"`
-	Permission   map[string]string       `json:"permission"`
-	Instructions []string                `json:"instructions"`
-	Skills       SkillsConfig            `json:"skills"`
-	Compaction   CompactionConfig        `json:"compaction"`
-	Lsp          map[string]LSPFile      `json:"lsp"`
+	Provider          map[string]ProviderFile `json:"provider"`
+	Model             string                  `json:"model"`
+	SmallModel        string                  `json:"small_model"`
+	EnabledProviders  []string                `json:"enabled_providers"`
+	DisabledProviders []string                `json:"disabled_providers"`
+	MCP               map[string]MCPFile      `json:"mcp"`
+	Agent             map[string]AgentFile    `json:"agent"`
+	Permission        map[string]string       `json:"permission"`
+	Instructions      []string                `json:"instructions"`
+	Skills            SkillsConfig            `json:"skills"`
+	Compaction        CompactionConfig        `json:"compaction"`
+	Lsp               map[string]LSPFile      `json:"lsp"`
 
 	// Go extension fields (optional, kept at top level)
 	DataDir                string `json:"data_dir,omitempty"`
@@ -113,6 +128,7 @@ type File struct {
 	BashTimeoutSec         int    `json:"bash_timeout_sec,omitempty"`
 	MaxOutputBytes         int    `json:"max_output_bytes,omitempty"`
 	MaxToolRounds          int    `json:"max_tool_rounds,omitempty"`
+	DoomLoopWindow         int    `json:"doom_loop_window,omitempty"`
 	LLMMaxRetries          int    `json:"llm_max_retries,omitempty"`
 	LLMTimeout             string `json:"llm_timeout,omitempty"`
 	MCPToolPrefix          string `json:"mcp_tool_prefix,omitempty"`
@@ -194,6 +210,7 @@ type Config struct {
 	DefaultProvider        string
 	DefaultModel           string
 	MaxToolRounds          int
+	DoomLoopWindow         int
 	Permissions            map[string]string
 	SkillsDir              string
 	Agents                 []AgentFile
@@ -220,6 +237,7 @@ func Defaults() Config {
 		MaxOutputBytes:    256 * 1024,
 		MCPToolPrefix:     "mcp.",
 		MaxToolRounds:     25,
+		DoomLoopWindow:    3,
 	}
 }
 
@@ -321,6 +339,19 @@ func merge(dst *Config, src File) {
 					s.Transport = "streamable_http"
 				}
 			}
+			if len(mf.Headers) > 0 {
+				s.Headers = make(map[string]string, len(mf.Headers))
+				for k, v := range mf.Headers {
+					s.Headers[k] = v
+				}
+			}
+			if mf.TimeoutSec > 0 {
+				s.TimeoutSec = mf.TimeoutSec
+			}
+			if mf.OAuth != nil {
+				copied := *mf.OAuth
+				s.OAuth = &copied
+			}
 			dst.MCPServers = append(dst.MCPServers, s)
 		}
 	}
@@ -395,6 +426,9 @@ func merge(dst *Config, src File) {
 	if src.MaxToolRounds > 0 {
 		dst.MaxToolRounds = src.MaxToolRounds
 	}
+	if src.DoomLoopWindow > 0 {
+		dst.DoomLoopWindow = src.DoomLoopWindow
+	}
 	if src.LLMMaxRetries > 0 {
 		dst.LLMMaxRetries = src.LLMMaxRetries
 	}
@@ -440,6 +474,11 @@ func applyEnv(c *Config) {
 	if v := os.Getenv("OPENCODE_BASH_TIMEOUT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			c.BashTimeoutSec = n
+		}
+	}
+	if v := os.Getenv("OPENCODE_DOOM_LOOP_WINDOW"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			c.DoomLoopWindow = n
 		}
 	}
 	if v := os.Getenv("OPENAI_API_KEY"); v != "" {
@@ -636,6 +675,19 @@ func mergeRemoteFallback(dst *Config, remote File) {
 				s.URL = mf.URL
 				s.Transport = "streamable_http"
 			}
+			if len(mf.Headers) > 0 {
+				s.Headers = make(map[string]string, len(mf.Headers))
+				for k, v := range mf.Headers {
+					s.Headers[k] = v
+				}
+			}
+			if mf.TimeoutSec > 0 {
+				s.TimeoutSec = mf.TimeoutSec
+			}
+			if mf.OAuth != nil {
+				copied := *mf.OAuth
+				s.OAuth = &copied
+			}
 			dst.MCPServers = append(dst.MCPServers, s)
 		}
 	}
@@ -698,6 +750,9 @@ func mergeFlags(dst *Config, flags *Config) {
 	}
 	if flags.MaxToolRounds > 0 {
 		dst.MaxToolRounds = flags.MaxToolRounds
+	}
+	if flags.DoomLoopWindow > 0 {
+		dst.DoomLoopWindow = flags.DoomLoopWindow
 	}
 	if flags.Model != "" {
 		dst.Model = flags.Model

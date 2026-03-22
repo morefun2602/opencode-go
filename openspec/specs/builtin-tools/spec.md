@@ -242,7 +242,7 @@ read 工具 MUST 支持可选的 `offset`（起始行号，1-based）和 `limit`
 ### Requirement: 标签分类表
 
 内置工具 MUST 按以下分类声明标签：
-- `read`：read、glob、grep、webfetch、websearch、skill、ls、lsp
+- `read`：read、glob、grep、webfetch、websearch、skill、ls、lsp、todoread
 - `write`：write、edit、apply_patch、todowrite、multiedit
 - `execute`：bash、task、batch
 - `interact`：question、plan_enter、plan_exit
@@ -251,3 +251,17 @@ read 工具 MUST 支持可选的 `offset`（起始行号，1-based）和 `limit`
 
 - **WHEN** 系统启动并注册所有内置工具
 - **THEN** 每个工具 MUST 至少有一个标签
+
+### Requirement: 自定义工具目录加载
+
+系统 MUST 支持从工作区自定义目录加载工具定义，目录为 `.opencode/tool` 与 `.opencode/tools`。定义文件 SHOULD 使用 JSON 格式，至少包含工具名与执行命令。加载失败或定义非法时 MUST 记录日志且 MUST NOT 影响内置工具注册。
+
+#### Scenario: 加载自定义工具
+
+- **WHEN** 工作区 `.opencode/tools` 下存在合法 JSON 工具定义
+- **THEN** 系统 MUST 将该工具注册到运行时工具列表中
+
+#### Scenario: 自定义工具与内置工具重名
+
+- **WHEN** 自定义工具名称与内置工具名称冲突
+- **THEN** 系统 MUST 拒绝该自定义工具并记录冲突日志

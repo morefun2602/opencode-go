@@ -2,6 +2,7 @@ package tool
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -14,6 +15,12 @@ type Router struct {
 	Builtin *tools.Registry
 	Clients []*mcp.Client
 	Log     *slog.Logger
+}
+
+type MCPResource struct {
+	Client string
+	Name   string
+	URI    string
 }
 
 // Run 执行工具；对未找到的工具名先尝试小写匹配，最后路由到 invalid 工具。
@@ -64,4 +71,37 @@ func (r *Router) Run(ctx context.Context, corrID, sessionID, name string, args m
 		})
 	}
 	return "", &ErrUnknown{Name: name}
+}
+
+// ListResources returns all MCP resources visible to the router.
+func (r *Router) ListResources() []MCPResource {
+	var out []MCPResource
+	for _, c := range r.Clients {
+		client := c.ServerID
+		if client == "" {
+			client = "default"
+		}
+		for _, res := range c.ListResources() {
+			out = append(out, MCPResource{
+				Client: client,
+				Name:   res.Name,
+				URI:    res.URI,
+			})
+		}
+	}
+	return out
+}
+
+// ReadResource reads an MCP resource by server id and URI.
+func (r *Router) ReadResource(ctx context.Context, clientID, uri string, args map[string]any) (string, error) {
+	for _, c := range r.Clients {
+		id := c.ServerID
+		if id == "" {
+			id = "default"
+		}
+		if id == clientID {
+			return c.ReadResource(ctx, uri, args)
+		}
+	}
+	return "", fmt.Errorf("unknown mcp client: %s", clientID)
 }

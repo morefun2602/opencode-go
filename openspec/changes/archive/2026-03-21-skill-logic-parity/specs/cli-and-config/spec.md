@@ -2,7 +2,7 @@
 
 ### Requirement: Skills 配置结构
 
-系统 MUST 支持 `x_opencode_go.skills` 配置项，包含以下子字段：
+系统 MUST 支持 `skills` 配置项，包含以下子字段：
 - `paths`（`[]string`，可选）：额外技能搜索路径，支持 `~/` 展开和相对路径
 - `urls`（`[]string`，可选）：远程技能索引 URL
 

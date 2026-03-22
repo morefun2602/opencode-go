@@ -2,7 +2,7 @@
 
 ### Requirement: Wire 接入 Engine
 
-LSP 模块 MUST 在 `wire.go` 中根据配置（`x_opencode_go.lsp.servers`）创建 LSP 客户端实例，并调用 `tool.RegisterLSP()` 注册 lsp 工具。当无 LSP 配置时 MUST 跳过。
+LSP 模块 MUST 在 `wire.go` 中根据配置（`lsp.servers`）创建 LSP 客户端实例，并调用 `tool.RegisterLSP()` 注册 lsp 工具。当无 LSP 配置时 MUST 跳过。
 
 #### Scenario: 有 LSP 配置时注册
 

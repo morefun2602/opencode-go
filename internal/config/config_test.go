@@ -43,3 +43,27 @@ func TestNonLoopbackRequiresToken(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestDoomLoopWindowFromFileAndEnv(t *testing.T) {
+	t.Setenv("OPENCODE_CONFIG", "")
+	dir := t.TempDir()
+	p := filepath.Join(dir, "opencode.json")
+	if err := os.WriteFile(p, []byte(`{"doom_loop_window":5}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DoomLoopWindow != 5 {
+		t.Fatalf("expected doom_loop_window=5 from file, got %d", cfg.DoomLoopWindow)
+	}
+	t.Setenv("OPENCODE_DOOM_LOOP_WINDOW", "7")
+	cfg, err = Load(p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DoomLoopWindow != 7 {
+		t.Fatalf("expected env override doom_loop_window=7, got %d", cfg.DoomLoopWindow)
+	}
+}

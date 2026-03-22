@@ -138,7 +138,7 @@ func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 			TurnSeq: m.TurnSeq, CreatedAt: m.CreatedAt,
 			Model: m.Model, CostPromptTokens: m.CostPromptTokens,
 			CostCompletionTokens: m.CostCompletionTokens,
-			FinishReason: m.FinishReason, ToolCallID: m.ToolCallID,
+			FinishReason:         m.FinishReason, ToolCallID: m.ToolCallID,
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -426,6 +426,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		"default_provider": h.Cfg.DefaultProvider,
 		"default_model":    h.Cfg.DefaultModel,
 		"max_tool_rounds":  h.Cfg.MaxToolRounds,
+		"doom_loop_window": h.Cfg.DoomLoopWindow,
 		"workspace_root":   h.Cfg.WorkspaceRoot,
 		"data_dir":         h.Cfg.DataDir,
 		"llm_timeout":      h.Cfg.LLMTimeout.String(),

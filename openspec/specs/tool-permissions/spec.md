@@ -8,7 +8,7 @@ TBD
 
 ### Requirement: 三态权限模型
 
-系统 MUST 为每个工具支持 `allow`（默认）、`ask`、`deny` 三种权限，通过 `x_opencode_go.permissions` 配置。
+系统 MUST 为每个工具支持 `allow`（默认）、`ask`、`deny` 三种权限，通过 `permissions` 配置。
 
 #### Scenario: deny 阻止执行
 
@@ -29,16 +29,17 @@ TBD
 - **WHEN** 工具权限为 `ask` 且在 REPL 模式下
 - **THEN** 系统 MUST 在 stderr/stdout 提示用户确认工具调用细节（工具名 + 参数摘要），用户同意后执行
 
-#### Scenario: HTTP 模式下 ask 降级
+#### Scenario: 无 Confirm 回调时默认拒绝
 
-- **WHEN** 工具权限为 `ask` 但调用来源为 HTTP API（无交互界面）
-- **THEN** 系统 MUST 将 `ask` 视为 `allow`（HTTP 端无法交互确认）
+- **WHEN** 工具权限为 `ask` 且 Engine 未注入 Confirm 回调
+- **THEN** 系统 MUST 返回拒绝类 tool_result
+- **AND** MUST NOT 执行实际工具逻辑
 
 ### Requirement: Confirm 回调注入
 
-Engine MUST 接受可选的 `Confirm` 函数，由调用方（REPL / HTTP handler）在构造时注入。未注入时所有 `ask` 权限 MUST 降级为 `allow`。
+Engine MUST 接受可选的 `Confirm` 函数，由调用方（REPL / HTTP handler）在构造时注入。未注入时 `ask` 权限 MUST 默认拒绝。
 
 #### Scenario: 未注入 Confirm
 
 - **WHEN** Engine 未设置 Confirm 回调且权限为 `ask`
-- **THEN** 工具 MUST 直接执行（等同 allow）
+- **THEN** 工具 MUST 返回拒绝结果（等同 deny）

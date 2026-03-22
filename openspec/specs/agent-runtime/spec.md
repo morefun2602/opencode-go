@@ -62,6 +62,16 @@
 - **WHEN** 会话 token 或消息条数超过配置阈值
 - **THEN** 系统 MUST 应用压缩或摘要且 MUST 继续允许新 turn
 
+### Requirement: Step Summary 生命周期
+
+系统 MUST 在 ReAct step 生命周期接入增量摘要能力：每轮结束后更新当前 session 的 step summary，并向可观测层发布摘要事件。
+
+#### Scenario: step 完成后写入摘要
+
+- **WHEN** 某轮 step 完成（无论有无 tool_calls）
+- **THEN** 系统 MUST 为该 step 生成/更新摘要条目
+- **AND** Bus MUST 发布 `session.summary` 事件
+
 ### Requirement: 重试与回退（Retry / Revert）
 
 系统 MUST 为模型或工具失败提供可配置的重试策略；在支持的场景下 MUST 提供回退到先前消息状态的能力（与 `persistence` 协同），且 MUST NOT 在无确认时丢弃用户数据。

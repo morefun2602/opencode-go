@@ -27,7 +27,7 @@
 
 ### Requirement: API key 配置优先级
 
-两个提供商 MUST 支持以下 API key 来源优先级：配置文件 `x_opencode_go.providers.<name>.api_key` > 环境变量（`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`）。
+两个提供商 MUST 支持以下 API key 来源优先级：配置文件 `providers.<name>.api_key` > 环境变量（`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`）。
 
 #### Scenario: 环境变量生效
 
@@ -36,7 +36,7 @@
 
 ### Requirement: base URL 覆盖
 
-OpenAI 提供商 MUST 支持通过 `x_opencode_go.providers.openai.base_url` 配置覆盖默认 API 端点，以兼容 Azure OpenAI 或私有部署。
+OpenAI 提供商 MUST 支持通过 `providers.openai.base_url` 配置覆盖默认 API 端点，以兼容 Azure OpenAI 或私有部署。
 
 #### Scenario: 自定义 base URL
 

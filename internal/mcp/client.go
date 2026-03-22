@@ -23,16 +23,29 @@ type Tool struct {
 	Schema      map[string]any
 }
 
-type Client struct {
-	inner    *mcpclient.Client
-	ServerID string
-	Prefix   string
-	Log      *slog.Logger
-	tools    []Tool
+type Resource struct {
+	Name        string
+	URI         string
+	Description string
+	MimeType    string
 }
 
-func NewClient(inner *mcpclient.Client, id, prefix string, log *slog.Logger) (*Client, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+type Client struct {
+	inner         *mcpclient.Client
+	ServerID      string
+	Prefix        string
+	Log           *slog.Logger
+	tools         []Tool
+	resources     []Resource
+	oauthProvider *OAuthProvider
+	timeout       time.Duration
+}
+
+func NewClient(inner *mcpclient.Client, id, prefix string, log *slog.Logger, oauthProvider *OAuthProvider, timeout time.Duration) (*Client, error) {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	_, err := inner.Initialize(ctx, mcpproto.InitializeRequest{
@@ -64,7 +77,35 @@ func NewClient(inner *mcpclient.Client, id, prefix string, log *slog.Logger) (*C
 		tools = append(tools, Tool{Name: t.Name, Description: t.Description, Schema: schema})
 	}
 
-	return &Client{inner: inner, ServerID: id, Prefix: prefix, Log: log, tools: tools}, nil
+	resourcesResult, err := inner.ListResources(ctx, mcpproto.ListResourcesRequest{})
+	var resources []Resource
+	if err != nil {
+		// Some MCP servers do not implement resources. Keep tools available.
+		if log != nil {
+			log.Warn("mcp_list_resources_failed", "server", id, "err", err)
+		}
+	} else {
+		resources = make([]Resource, 0, len(resourcesResult.Resources))
+		for _, r := range resourcesResult.Resources {
+			resources = append(resources, Resource{
+				Name:        r.Name,
+				URI:         r.URI,
+				Description: r.Description,
+				MimeType:    r.MIMEType,
+			})
+		}
+	}
+
+	return &Client{
+		inner:         inner,
+		ServerID:      id,
+		Prefix:        prefix,
+		Log:           log,
+		tools:         tools,
+		resources:     resources,
+		oauthProvider: oauthProvider,
+		timeout:       timeout,
+	}, nil
 }
 
 func (c *Client) ListTools() []Tool {
@@ -116,6 +157,16 @@ func (c *Client) CallTool(ctx context.Context, fullName string, args map[string]
 			return b.String(), nil
 		}
 		last = err
+		if c.isUnauthorized(err) && c.oauthProvider != nil {
+			if c.Log != nil {
+				c.Log.Warn("mcp_oauth_retry", "server", c.ServerID, "tool", fullName, "attempt", attempt+1)
+			}
+			_ = c.oauthProvider.InvalidateToken()
+			if _, tokenErr := c.oauthProvider.GetToken(ctx); tokenErr != nil {
+				return "", fmt.Errorf("oauth refresh failed: %w", tokenErr)
+			}
+			continue
+		}
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
@@ -124,6 +175,55 @@ func (c *Client) CallTool(ctx context.Context, fullName string, args map[string]
 		}
 		if c.Log != nil {
 			c.Log.Warn("mcp_retry", "attempt", attempt+1, "err", err)
+		}
+		time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+	}
+	return "", last
+}
+
+func (c *Client) ListResources() []Resource {
+	out := make([]Resource, len(c.resources))
+	copy(out, c.resources)
+	return out
+}
+
+func (c *Client) ReadResource(ctx context.Context, uri string, arguments map[string]any) (string, error) {
+	req := mcpproto.ReadResourceRequest{}
+	req.Params.URI = uri
+	if len(arguments) > 0 {
+		req.Params.Arguments = arguments
+	}
+	var last error
+	for attempt := range 3 {
+		result, err := c.inner.ReadResource(ctx, req)
+		if err == nil {
+			var b strings.Builder
+			for _, content := range result.Contents {
+				switch v := any(content).(type) {
+				case mcpproto.TextResourceContents:
+					b.WriteString(v.Text)
+				default:
+					raw := fmt.Sprint(content)
+					if raw != "" {
+						b.WriteString(raw)
+					}
+				}
+			}
+			return b.String(), nil
+		}
+		last = err
+		if c.isUnauthorized(err) && c.oauthProvider != nil {
+			_ = c.oauthProvider.InvalidateToken()
+			if _, tokenErr := c.oauthProvider.GetToken(ctx); tokenErr != nil {
+				return "", fmt.Errorf("oauth refresh failed: %w", tokenErr)
+			}
+			continue
+		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		if !isRetryable(err) {
+			break
 		}
 		time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
 	}
@@ -143,4 +243,12 @@ func isRetryable(err error) bool {
 	}
 	s := err.Error()
 	return strings.Contains(s, "timeout") || strings.Contains(s, "Temporary")
+}
+
+func (c *Client) isUnauthorized(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "401") || strings.Contains(s, "unauthorized")
 }

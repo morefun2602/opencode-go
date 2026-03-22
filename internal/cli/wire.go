@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	mcpclient "github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/morefun2602/opencode-go/internal/bus"
 	"github.com/morefun2602/opencode-go/internal/config"
 	"github.com/morefun2602/opencode-go/internal/filewatcher"
@@ -164,27 +166,76 @@ func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Sto
 
 	var mcpClients []*mcp.Client
 	for _, s := range cfg.MCPServers {
-		transport := s.InferTransport()
+		srv := s
+		transportType := srv.InferTransport()
 		var inner *mcpclient.Client
 		var cerr error
-		switch transport {
+		timeout := 30 * time.Second
+		if srv.TimeoutSec > 0 {
+			timeout = time.Duration(srv.TimeoutSec) * time.Second
+		}
+
+		var oauthProvider *mcp.OAuthProvider
+		headerFunc := func(ctx context.Context) map[string]string {
+			headers := map[string]string{}
+			for k, v := range srv.Headers {
+				headers[k] = v
+			}
+			if oauthProvider != nil {
+				token, err := oauthProvider.GetToken(ctx)
+				if err != nil {
+					log.Warn("mcp_oauth_header_failed", "server", srv.Name, "err", err)
+				} else if token != nil && token.AccessToken != "" {
+					tokenType := token.TokenType
+					if tokenType == "" {
+						tokenType = "Bearer"
+					}
+					headers["Authorization"] = tokenType + " " + token.AccessToken
+				}
+			}
+			return headers
+		}
+
+		if srv.OAuth != nil {
+			oauthProvider = mcp.NewOAuthProvider(srv.Name, mcp.OAuthConfig{
+				AuthorizationURL: srv.OAuth.AuthorizationURL,
+				TokenURL:         srv.OAuth.TokenURL,
+				ClientID:         srv.OAuth.ClientID,
+				ClientSecret:     srv.OAuth.ClientSecret,
+				Scopes:           srv.OAuth.Scopes,
+				RedirectPort:     srv.OAuth.RedirectPort,
+			}, log)
+		}
+
+		switch transportType {
 		case "stdio":
-			inner, cerr = mcpclient.NewStdioMCPClient(s.Command, nil, s.Args...)
+			inner, cerr = mcpclient.NewStdioMCPClient(srv.Command, nil, srv.Args...)
 		case "sse":
-			inner, cerr = mcpclient.NewSSEMCPClient(s.URL)
+			opts := []transport.ClientOption{}
+			if len(srv.Headers) > 0 || oauthProvider != nil {
+				opts = append(opts, transport.WithHeaderFunc(headerFunc))
+			}
+			inner, cerr = mcpclient.NewSSEMCPClient(srv.URL, opts...)
 		case "streamable_http":
-			inner, cerr = mcpclient.NewStreamableHttpClient(s.URL)
+			opts := []transport.StreamableHTTPCOption{}
+			if len(srv.Headers) > 0 || oauthProvider != nil {
+				opts = append(opts, transport.WithHTTPHeaderFunc(headerFunc))
+			}
+			if timeout > 0 {
+				opts = append(opts, transport.WithHTTPTimeout(timeout))
+			}
+			inner, cerr = mcpclient.NewStreamableHttpClient(srv.URL, opts...)
 		default:
-			log.Warn("mcp_unknown_transport", "server", s.Name, "transport", transport)
+			log.Warn("mcp_unknown_transport", "server", srv.Name, "transport", transportType)
 			continue
 		}
 		if cerr != nil {
-			log.Warn("mcp_start_fail", "server", s.Name, "err", cerr)
+			log.Warn("mcp_start_fail", "server", srv.Name, "err", cerr)
 			continue
 		}
-		c, cerr := mcp.NewClient(inner, s.Name, cfg.MCPToolPrefix, log)
+		c, cerr := mcp.NewClient(inner, srv.Name, cfg.MCPToolPrefix, log, oauthProvider, timeout)
 		if cerr != nil {
-			log.Warn("mcp_connect_fail", "server", s.Name, "err", cerr)
+			log.Warn("mcp_connect_fail", "server", srv.Name, "err", cerr)
 			continue
 		}
 		mcpClients = append(mcpClients, c)
@@ -204,6 +255,7 @@ func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Sto
 	}
 
 	tool.RegisterBuiltin(treg, pol, skills, watcher)
+	tool.RegisterCustomToolsFromWorkspace(treg, cfg.WorkspaceRoot, log)
 
 	var snap *snapshot.Service
 	if cfg.WorkspaceRoot != "" {
@@ -239,6 +291,7 @@ func wireEngine(cfg config.Config, log *slog.Logger) (*runtime.Engine, store.Sto
 		Agent:              runtime.AgentBuild,
 		AgentSwitch:        agentSwitch,
 		MaxToolRounds:      cfg.MaxToolRounds,
+		DoomLoopWindow:     cfg.DoomLoopWindow,
 		LLMMaxRetries:      cfg.LLMMaxRetries,
 		CompactionTurns:    cfg.CompactionTurns,
 		WorkspaceRoot:      cfg.WorkspaceRoot,

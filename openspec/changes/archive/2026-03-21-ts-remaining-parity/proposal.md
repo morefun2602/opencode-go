@@ -56,8 +56,8 @@ Go 版 OpenCode 已实现核心 ReAct 循环、两家 LLM 提供商（OpenAI / A
 - 异步权限流（HTTP 模式下 question/permission 通过事件总线回复）
 
 ### 配置增强
-- `x_opencode_go.agents` 配置：自定义 Agent 模式（名称、权限、模型、温度）
-- `x_opencode_go.instructions` 数组：全局系统提示注入
+- `agents` 配置：自定义 Agent 模式（名称、权限、模型、温度）
+- `instructions` 数组：全局系统提示注入
 - 远程配置：支持从 `.well-known/opencode` URL 拉取配置
 
 ## Capabilities

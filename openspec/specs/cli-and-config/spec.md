@@ -8,11 +8,11 @@
 
 ### Requirement: 与上游配置一致
 
-对于两种实现中均存在的设置，系统 MUST 使用与上游 OpenCode 相同的配置文件名、文件格式与顶层键路径。仅 Go 实现使用的设置 MUST 在 `x_opencode_go` 命名空间下。新增以下 `x_opencode_go` 键：`providers`（OpenAI/Anthropic 配置含 api_key/base_url/model）、`default_provider`、`default_model`、`max_tool_rounds`、`permissions`（per-tool ask/allow/deny）、`skills_dir`、`mcp_servers`（含 transport/command/url/args 字段）、`model`（默认模型）、`small_model`（小模型）、`instructions`（指令文件/URL 数组）、`compaction`（auto/reserved/prune）、`lsp`（语言服务器配置）。配置文件 MUST 支持 JSONC 格式。
+对于两种实现中均存在的设置，系统 MUST 使用与上游 OpenCode 相同的配置文件名、文件格式与顶层键路径。Go 扩展键也 MUST 直接位于顶层并在文档中明确说明。新增键包括：`providers`（OpenAI/Anthropic 配置含 api_key/base_url/model）、`default_provider`、`default_model`、`max_tool_rounds`、`doom_loop_window`、`permissions`（per-tool ask/allow/deny）、`skills_dir`、`mcp_servers`（含 transport/command/url/args 字段）、`model`（默认模型）、`small_model`（小模型）、`instructions`（指令文件/URL 数组）、`compaction`（auto/reserved/prune）、`lsp`（语言服务器配置）。配置文件 MUST 支持 JSONC 格式。
 
 #### Scenario: 新增配置键可加载
 
-- **WHEN** 配置文件包含 `x_opencode_go.providers.openai.api_key` 键
+- **WHEN** 配置文件包含 `providers.openai.api_key` 键
 - **THEN** 系统 MUST 解析并用于初始化 OpenAI 提供商
 
 #### Scenario: JSONC 格式可加载
@@ -41,7 +41,7 @@
 
 ### Requirement: 默认模型配置
 
-系统 MUST 支持 `x_opencode_go.model` 配置项（字符串，`"provider/model"` 格式），指定默认使用的模型。未配置时 MUST 回退到第一个可用 Provider 的第一个模型。
+系统 MUST 支持 `model` 配置项（字符串，`"provider/model"` 格式），指定默认使用的模型。未配置时 MUST 回退到第一个可用 Provider 的第一个模型。
 
 #### Scenario: 指定默认模型
 
@@ -50,7 +50,7 @@
 
 ### Requirement: 小模型配置
 
-系统 MUST 支持 `x_opencode_go.small_model` 配置项（字符串，`"provider/model"` 格式），指定用于 compaction/title/summary 等内部任务的小模型。
+系统 MUST 支持 `small_model` 配置项（字符串，`"provider/model"` 格式），指定用于 compaction/title/summary 等内部任务的小模型。
 
 #### Scenario: 指定小模型
 
@@ -59,7 +59,7 @@
 
 ### Requirement: InstructionPrompt 文件配置
 
-系统 MUST 支持 `x_opencode_go.instructions` 配置项（字符串数组），每项可为文件路径或 URL。文件路径 MUST 相对于工作区根目录解析。URL MUST 通过 HTTP GET 加载。
+系统 MUST 支持 `instructions` 配置项（字符串数组），每项可为文件路径或 URL。文件路径 MUST 相对于工作区根目录解析。URL MUST 通过 HTTP GET 加载。
 
 #### Scenario: 文件路径指令
 
@@ -73,7 +73,7 @@
 
 ### Requirement: Compaction 配置
 
-系统 MUST 支持 `x_opencode_go.compaction` 配置项，包含以下子字段：
+系统 MUST 支持 `compaction` 配置项，包含以下子字段：
 - `auto`（bool，默认 true）：是否自动触发 compaction
 - `reserved`（int，默认 20000）：预留 token 数
 - `prune`（bool，默认 true）：是否在 compaction 前裁剪旧 tool 输出
@@ -90,7 +90,7 @@
 
 ### Requirement: LSP 服务器配置
 
-系统 MUST 支持 `x_opencode_go.lsp` 配置项，包含 `servers` 数组，每项包含 `language`（语言标识）、`command`（启动命令）、`args`（参数数组）字段。
+系统 MUST 支持 `lsp` 配置项，包含 `servers` 数组，每项包含 `language`（语言标识）、`command`（启动命令）、`args`（参数数组）字段。
 
 #### Scenario: 配置 Go LSP
 
@@ -156,13 +156,13 @@
 - **WHEN** 用户调用文档化的交互子命令且配置有效
 - **THEN** 系统 MUST 进入交互循环且 MUST 响应中断信号按文档退出
 
-### Requirement: Go 扩展键命名空间
+### Requirement: Go 扩展键命名
 
-新增仅 Go 实现使用的配置键 MUST 位于 `x_opencode_go` 命名空间（或后续与上游约定的前缀），且 MUST 在文档中列出；MUST NOT 占用上游已定义键名。
+新增仅 Go 实现使用的配置键 MUST 位于顶层并在文档中列出；MUST NOT 占用上游已定义键名，且 SHOULD 优先复用上游已有键语义。
 
 #### Scenario: 新键不冲突
 
-- **WHEN** 配置包含 `x_opencode_go` 下新字段
+- **WHEN** 配置包含新增 Go 扩展字段
 - **THEN** 解析 MUST 成功且 MUST 不影响上游键语义
 
 ### Requirement: REPL agent 循环
@@ -181,16 +181,21 @@
 
 ### Requirement: MCP 服务端配置
 
-`x_opencode_go.mcp_servers` 数组中的每个条目 MUST 支持 `name`、`transport`（stdio/sse/streamable_http）、`command`（stdio 用）、`args`（stdio 用）、`url`（SSE/Streamable HTTP 用）字段。
+`mcp_servers` 数组中的每个条目 MUST 支持 `name`、`transport`（stdio/sse/streamable_http）、`command`（stdio 用）、`args`（stdio 用）、`url`（SSE/Streamable HTTP 用）字段，并 SHOULD 支持 `headers`、`timeout_sec` 与 `oauth`（`authorization_url`、`token_url`、`client_id`、`client_secret`、`scopes`、`redirect_port`）字段。
 
 #### Scenario: MCP 配置解析
 
 - **WHEN** 配置文件包含含 `transport: "sse"` 与 `url` 的 MCP 服务端条目
 - **THEN** 系统 MUST 初始化 SSE 传输连接该服务端
 
+#### Scenario: MCP OAuth 配置解析
+
+- **WHEN** MCP 条目包含 `oauth` 配置
+- **THEN** 系统 MUST 在远程请求中注入 OAuth access token，并在 401 时触发 token 失效后重试
+
 ### Requirement: Agent 模式配置
 
-系统 MUST 支持 `x_opencode_go.agents` 配置项，为自定义 Agent 模式定义名称、允许的工具列表、模型、温度等参数。
+系统 MUST 支持 `agents` 配置项，为自定义 Agent 模式定义名称、允许的工具列表、模型、温度等参数。
 
 #### Scenario: 自定义 Agent 加载
 
@@ -199,7 +204,7 @@
 
 ### Requirement: 全局指令注入
 
-系统 MUST 支持 `x_opencode_go.instructions` 配置项（字符串数组），其内容 MUST 在每个会话的系统提示头部注入。
+系统 MUST 支持 `instructions` 配置项（字符串数组），其内容 MUST 在每个会话的系统提示头部注入。
 
 #### Scenario: 指令注入
 
@@ -226,7 +231,7 @@
 
 ### Requirement: Skills 配置结构
 
-系统 MUST 支持 `x_opencode_go.skills` 配置项，包含以下子字段：
+系统 MUST 支持 `skills` 配置项，包含以下子字段：
 - `paths`（`[]string`，可选）：额外技能搜索路径，支持 `~/` 展开和相对路径
 - `urls`（`[]string`，可选）：远程技能索引 URL
 

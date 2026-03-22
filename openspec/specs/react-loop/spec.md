@@ -83,12 +83,12 @@ Engine MUST 在一轮对话（含所有中间 tool_call/result）结束后将全
 
 ### Requirement: Doom loop 检测
 
-Engine MUST 在 ReAct 循环中维护最近 N 次（默认 3）tool_call 的签名（工具名 + 参数内容 hash）。当连续 N 次签名完全相同时，Engine MUST 通过 Permission.Ask 通知用户并询问是否继续，而非直接终止。
+Engine MUST 在 ReAct 循环中维护最近 N 次（默认 3，可由配置 `doom_loop_window` 覆盖）tool_call 的签名（工具名 + 参数内容 hash）。当连续 N 次签名完全相同时，Engine MUST 通过 Confirm 请求用户是否继续。
 
 #### Scenario: 检测到 doom loop
 
 - **WHEN** 连续 3 次 tool_call 的工具名和参数 hash 完全相同
-- **THEN** Engine MUST 暂停循环并通过 Permission.Ask 向用户展示重复信息，等待用户决定继续或终止
+- **THEN** Engine MUST 暂停循环并等待用户决定继续或终止
 
 #### Scenario: 相同工具不同参数不触发
 
@@ -324,3 +324,17 @@ Engine MUST 在每次重试等待前通过 Bus 发布 `session.retry` 事件，p
 - **WHEN** LLM 调用因 RateLimit 进入重试
 - **THEN** Bus MUST 收到 `session.retry` 事件
 - **AND** payload MUST 包含重试次数和等待时间
+
+### Requirement: ReAct 关键阶段事件
+
+Engine MUST 发布 ReAct 关键阶段事件，至少包括 `react.round.start`、`react.round.finish`、`react.blocked`、`react.compact.start`、`react.compact.success`、`react.compact.fail`。
+
+#### Scenario: 轮次开始结束事件
+
+- **WHEN** ReAct 循环开始/结束一轮
+- **THEN** Bus MUST 分别收到 `react.round.start` 和 `react.round.finish` 事件
+
+#### Scenario: 权限拦截事件
+
+- **WHEN** 工具调用被 deny 或 ask-reject 拦截
+- **THEN** Bus MUST 发布 `react.blocked` 事件并包含 tool 与 reason

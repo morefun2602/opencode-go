@@ -116,7 +116,7 @@
 
 ### Requirement: 自定义模式
 
-系统 MUST 支持通过 `x_opencode_go.agents` 配置自定义 Agent 模式，每个自定义模式可指定允许的工具名单（映射为 Permission Ruleset）、模型、温度等参数。
+系统 MUST 支持通过 `agents` 配置自定义 Agent 模式，每个自定义模式可指定允许的工具名单（映射为 Permission Ruleset）、模型、温度等参数。
 
 #### Scenario: AgentFile 完整配置
 

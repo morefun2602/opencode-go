@@ -38,32 +38,33 @@ var noopToolDef = llm.ToolDef{
 }
 
 type Engine struct {
-	Store                store.Store
-	LLM                  llm.Provider
-	Router               *llm.Router
-	Providers            *llm.Registry
-	Tools                *tool.Router
-	Policy               *policy.Policy
-	Log                  *slog.Logger
-	Bus                  *bus.Bus
-	Skills               []skill.Skill
-	Agent                Agent
-	AgentSwitch          *AgentSwitch
-	Mode                 Mode
-	MaxToolRounds        int
-	LLMMaxRetries        int
-	CompactionTurns      int
-	SystemPrompt         string
-	WorkspaceRoot        string
-	ConfigInstructions   []string
-	CompactionConfig     config.CompactionConfig
-	Confirm              func(name string, args map[string]any) (bool, error)
-	DoomLoopWindow       int
-	Snapshot             SnapshotService
-	Compaction           CompactionService
+	Store                  store.Store
+	LLM                    llm.Provider
+	Router                 *llm.Router
+	Providers              *llm.Registry
+	Tools                  *tool.Router
+	Policy                 *policy.Policy
+	Log                    *slog.Logger
+	Bus                    *bus.Bus
+	Skills                 []skill.Skill
+	Agent                  Agent
+	AgentSwitch            *AgentSwitch
+	Mode                   Mode
+	MaxToolRounds          int
+	LLMMaxRetries          int
+	CompactionTurns        int
+	SystemPrompt           string
+	WorkspaceRoot          string
+	ConfigInstructions     []string
+	CompactionConfig       config.CompactionConfig
+	Confirm                func(name string, args map[string]any) (bool, error)
+	DoomLoopWindow         int
+	Snapshot               SnapshotService
+	Compaction             CompactionService
 	StructuredOutputSchema map[string]any
 
 	sessions sync.Map // sessionID → context.CancelFunc
+	summary  sync.Map // sessionID -> *tools.SessionSummary
 }
 
 // SnapshotService is an optional interface for workspace snapshots.
@@ -132,6 +133,7 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 	defer func() {
 		cancel()
 		e.sessions.Delete(sessionID)
+		e.summary.Delete(sessionID)
 		if e.AgentSwitch != nil {
 			e.AgentSwitch.Delete(sessionID)
 		}
@@ -147,14 +149,14 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 	}
 
 	agent := e.activeAgent(ctx, sessionID)
-	prov, _ := e.resolveProviderForAgent(agent)
+	prov, model := e.resolveProviderForAgent(agent)
 	sys := e.buildSystemPromptForAgent(prov, agent)
 	if sys != "" {
 		msgs = append([]llm.Message{{Role: "system", Content: sys}}, msgs...)
 	}
 	msgs = append(msgs, llm.Message{Role: "user", Content: userText})
 
-	tdefs := e.collectToolsForAgent(agent)
+	tdefs := e.collectToolsForAgent(agent, model)
 	tdefs = e.maybeInjectNoop(tdefs, msgs)
 	var newMsgs []store.MessageRow
 	newMsgs = append(newMsgs, msgToRow(llm.Message{Role: "user", Content: userText}, nil))
@@ -177,12 +179,18 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 		}
 
 		stepID := fmt.Sprintf("step-%d", round)
+		e.publish("react.round.start", map[string]any{
+			"session_id": sessionID,
+			"round":      round + 1,
+			"step_id":    stepID,
+		})
 		if e.Snapshot != nil {
 			_ = e.Snapshot.Track(ctx, sessionID, stepID)
 		}
 
 		agent = e.activeAgent(ctx, sessionID)
-		tdefs = e.collectToolsForAgent(agent)
+		_, roundModel := e.resolveProviderForAgent(agent)
+		tdefs = e.collectToolsForAgent(agent, roundModel)
 		tdefs = e.maybeInjectNoop(tdefs, msgs)
 
 		roundTdefs := tdefs
@@ -198,7 +206,7 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 				if e.Log != nil {
 					e.Log.Warn("context_overflow, compacting", "session_id", sessionID)
 				}
-				compacted, cErr := e.Compaction.Process(ctx, prov, workspaceID, sessionID, msgs, 5)
+				compacted, cErr := e.compactNow(ctx, runProv, workspaceID, sessionID, msgs, "context_overflow")
 				if cErr != nil {
 					return "", fmt.Errorf("compaction failed: %w", cErr)
 				}
@@ -220,7 +228,7 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 				if e.CompactionConfig.PruneEnabled() {
 					msgs = tools.Prune(msgs, 40000)
 				}
-				compacted, cErr := e.Compaction.Process(ctx, prov, workspaceID, sessionID, msgs, 5)
+				compacted, cErr := e.compactNow(ctx, runProv, workspaceID, sessionID, msgs, "auto_overflow")
 				if cErr == nil {
 					msgs = compacted
 				}
@@ -230,10 +238,19 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 		msgs = append(msgs, resp.Message)
 		newMsgs = append(newMsgs, msgToRow(resp.Message, &resp.Usage))
 
+		toolCalls := []string{}
 		if resp.FinishReason != "tool_calls" {
 			if e.Snapshot != nil {
 				_ = e.Snapshot.Patch(ctx, sessionID, stepID)
 			}
+			e.maybeSummarizeStep(ctx, sessionID, stepID, runProv, toolCalls, "")
+			e.publish("react.round.finish", map[string]any{
+				"session_id":      sessionID,
+				"round":           round + 1,
+				"step_id":         stepID,
+				"finish_reason":   resp.FinishReason,
+				"tool_call_count": len(toolCalls),
+			})
 			break
 		}
 
@@ -241,6 +258,7 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 			if p.Type != "tool_call" {
 				continue
 			}
+			toolCalls = append(toolCalls, p.ToolName)
 
 			if p.ToolName == "_noop" {
 				toolMsg := llm.Message{
@@ -262,31 +280,59 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 				if e.Log != nil {
 					e.Log.Warn("doom_loop_detected", "tool", p.ToolName, "session_id", sessionID)
 				}
-				if e.Confirm != nil {
-					ok, _ := e.Confirm("__doom_loop__", map[string]any{
-						"tool":  p.ToolName,
-						"count": doomWindow,
-					})
-					if !ok {
-						toolMsg := llm.Message{
-							Role: "tool",
-							Parts: []llm.Part{{
-								Type:       "tool_result",
-								ToolCallID: p.ToolCallID,
-								ToolName:   p.ToolName,
-								Result:     "doom loop detected: same tool call repeated, user chose to stop",
-								IsError:    true,
-							}},
-						}
-						msgs = append(msgs, toolMsg)
-						newMsgs = append(newMsgs, store.MessageRow{
-							Role: "tool", Body: toolMsg.Parts[0].Result,
-							Parts: mustJSON(toolMsg.Parts), ToolCallID: p.ToolCallID,
-						})
-						goto persist
-					}
-					sigWindow = sigWindow[:0]
+				if e.Policy != nil {
+					e.Policy.Audit("doom_loop_detected", "tool", p.ToolName, "session_id", sessionID, "threshold", doomWindow)
 				}
+				if e.Confirm == nil {
+					if e.Policy != nil {
+						e.Policy.Audit("doom_loop_reject", "tool", p.ToolName, "session_id", sessionID, "reason", "no_confirm_handler")
+					}
+					toolMsg := llm.Message{
+						Role: "tool",
+						Parts: []llm.Part{{
+							Type:       "tool_result",
+							ToolCallID: p.ToolCallID,
+							ToolName:   p.ToolName,
+							Result:     "doom loop detected: no confirm handler available, stopping",
+							IsError:    true,
+						}},
+					}
+					msgs = append(msgs, toolMsg)
+					newMsgs = append(newMsgs, store.MessageRow{
+						Role: "tool", Body: toolMsg.Parts[0].Result,
+						Parts: mustJSON(toolMsg.Parts), ToolCallID: p.ToolCallID,
+					})
+					goto persist
+				}
+				ok, _ := e.Confirm("__doom_loop__", map[string]any{
+					"tool":  p.ToolName,
+					"count": doomWindow,
+				})
+				if !ok {
+					if e.Policy != nil {
+						e.Policy.Audit("doom_loop_reject", "tool", p.ToolName, "session_id", sessionID, "reason", "user_reject")
+					}
+					toolMsg := llm.Message{
+						Role: "tool",
+						Parts: []llm.Part{{
+							Type:       "tool_result",
+							ToolCallID: p.ToolCallID,
+							ToolName:   p.ToolName,
+							Result:     "doom loop detected: same tool call repeated, user chose to stop",
+							IsError:    true,
+						}},
+					}
+					msgs = append(msgs, toolMsg)
+					newMsgs = append(newMsgs, store.MessageRow{
+						Role: "tool", Body: toolMsg.Parts[0].Result,
+						Parts: mustJSON(toolMsg.Parts), ToolCallID: p.ToolCallID,
+					})
+					goto persist
+				}
+				if e.Policy != nil {
+					e.Policy.Audit("doom_loop_allow_once", "tool", p.ToolName, "session_id", sessionID)
+				}
+				sigWindow = sigWindow[:0]
 			}
 
 			result, isErr := e.executeTool(ctx, workspaceID, sessionID, p)
@@ -312,6 +358,14 @@ func (e *Engine) CompleteTurn(ctx context.Context, workspaceID, sessionID, userT
 		if e.Snapshot != nil {
 			_ = e.Snapshot.Patch(ctx, sessionID, stepID)
 		}
+		e.maybeSummarizeStep(ctx, sessionID, stepID, runProv, toolCalls, "")
+		e.publish("react.round.finish", map[string]any{
+			"session_id":      sessionID,
+			"round":           round + 1,
+			"step_id":         stepID,
+			"finish_reason":   resp.FinishReason,
+			"tool_call_count": len(toolCalls),
+		})
 	}
 
 persist:
@@ -353,6 +407,7 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 	defer func() {
 		cancel()
 		e.sessions.Delete(sessionID)
+		e.summary.Delete(sessionID)
 		if e.AgentSwitch != nil {
 			e.AgentSwitch.Delete(sessionID)
 		}
@@ -368,14 +423,14 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 	}
 
 	agent := e.activeAgent(ctx, sessionID)
-	prov, _ := e.resolveProviderForAgent(agent)
+	prov, model := e.resolveProviderForAgent(agent)
 	sys := e.buildSystemPromptForAgent(prov, agent)
 	if sys != "" {
 		msgs = append([]llm.Message{{Role: "system", Content: sys}}, msgs...)
 	}
 	msgs = append(msgs, llm.Message{Role: "user", Content: userText})
 
-	tdefs := e.collectToolsForAgent(agent)
+	tdefs := e.collectToolsForAgent(agent, model)
 	tdefs = e.maybeInjectNoop(tdefs, msgs)
 	var newMsgs []store.MessageRow
 	newMsgs = append(newMsgs, msgToRow(llm.Message{Role: "user", Content: userText}, nil))
@@ -394,10 +449,16 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 		}
 
 		agent = e.activeAgent(ctx, sessionID)
-		tdefs = e.collectToolsForAgent(agent)
+		_, roundModel := e.resolveProviderForAgent(agent)
+		tdefs = e.collectToolsForAgent(agent, roundModel)
 		tdefs = e.maybeInjectNoop(tdefs, msgs)
 
 		stepID := fmt.Sprintf("step-%d", round)
+		e.publish("react.round.start", map[string]any{
+			"session_id": sessionID,
+			"round":      round + 1,
+			"step_id":    stepID,
+		})
 		if e.Snapshot != nil {
 			_ = e.Snapshot.Track(ctx, sessionID, stepID)
 		}
@@ -412,7 +473,7 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 		resp, err := e.streamWithRetry(ctx, sessionID, runProv, runModel, msgs, roundTdefs, chunk)
 		if err != nil {
 			if llm.Classify(err) == llm.ContextOverflow && e.Compaction != nil {
-				compacted, cErr := e.Compaction.Process(ctx, prov, workspaceID, sessionID, msgs, 5)
+				compacted, cErr := e.compactNow(ctx, runProv, workspaceID, sessionID, msgs, "context_overflow")
 				if cErr != nil {
 					return fmt.Errorf("compaction failed: %w", cErr)
 				}
@@ -429,10 +490,19 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 		msgs = append(msgs, resp.Message)
 		newMsgs = append(newMsgs, msgToRow(resp.Message, &resp.Usage))
 
+		toolCalls := []string{}
 		if resp.FinishReason != "tool_calls" {
 			if e.Snapshot != nil {
 				_ = e.Snapshot.Patch(ctx, sessionID, stepID)
 			}
+			e.maybeSummarizeStep(ctx, sessionID, stepID, runProv, toolCalls, "")
+			e.publish("react.round.finish", map[string]any{
+				"session_id":      sessionID,
+				"round":           round + 1,
+				"step_id":         stepID,
+				"finish_reason":   resp.FinishReason,
+				"tool_call_count": len(toolCalls),
+			})
 			break
 		}
 
@@ -440,6 +510,7 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 			if p.Type != "tool_call" {
 				continue
 			}
+			toolCalls = append(toolCalls, p.ToolName)
 
 			if p.ToolName == "_noop" {
 				toolMsg := llm.Message{
@@ -458,31 +529,59 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 			sig := computeToolCallSig(p.ToolName, p.Args)
 			sigWindow = append(sigWindow, sig)
 			if isDoomLoop(sigWindow, doomWindow) {
-				if e.Confirm != nil {
-					ok, _ := e.Confirm("__doom_loop__", map[string]any{
-						"tool":  p.ToolName,
-						"count": doomWindow,
-					})
-					if !ok {
-						toolMsg := llm.Message{
-							Role: "tool",
-							Parts: []llm.Part{{
-								Type:       "tool_result",
-								ToolCallID: p.ToolCallID,
-								ToolName:   p.ToolName,
-								Result:     "doom loop detected: same tool call repeated, user chose to stop",
-								IsError:    true,
-							}},
-						}
-						msgs = append(msgs, toolMsg)
-						newMsgs = append(newMsgs, store.MessageRow{
-							Role: "tool", Body: toolMsg.Parts[0].Result,
-							Parts: mustJSON(toolMsg.Parts), ToolCallID: p.ToolCallID,
-						})
-						goto persistStream
-					}
-					sigWindow = sigWindow[:0]
+				if e.Policy != nil {
+					e.Policy.Audit("doom_loop_detected", "tool", p.ToolName, "session_id", sessionID, "threshold", doomWindow)
 				}
+				if e.Confirm == nil {
+					if e.Policy != nil {
+						e.Policy.Audit("doom_loop_reject", "tool", p.ToolName, "session_id", sessionID, "reason", "no_confirm_handler")
+					}
+					toolMsg := llm.Message{
+						Role: "tool",
+						Parts: []llm.Part{{
+							Type:       "tool_result",
+							ToolCallID: p.ToolCallID,
+							ToolName:   p.ToolName,
+							Result:     "doom loop detected: no confirm handler available, stopping",
+							IsError:    true,
+						}},
+					}
+					msgs = append(msgs, toolMsg)
+					newMsgs = append(newMsgs, store.MessageRow{
+						Role: "tool", Body: toolMsg.Parts[0].Result,
+						Parts: mustJSON(toolMsg.Parts), ToolCallID: p.ToolCallID,
+					})
+					goto persistStream
+				}
+				ok, _ := e.Confirm("__doom_loop__", map[string]any{
+					"tool":  p.ToolName,
+					"count": doomWindow,
+				})
+				if !ok {
+					if e.Policy != nil {
+						e.Policy.Audit("doom_loop_reject", "tool", p.ToolName, "session_id", sessionID, "reason", "user_reject")
+					}
+					toolMsg := llm.Message{
+						Role: "tool",
+						Parts: []llm.Part{{
+							Type:       "tool_result",
+							ToolCallID: p.ToolCallID,
+							ToolName:   p.ToolName,
+							Result:     "doom loop detected: same tool call repeated, user chose to stop",
+							IsError:    true,
+						}},
+					}
+					msgs = append(msgs, toolMsg)
+					newMsgs = append(newMsgs, store.MessageRow{
+						Role: "tool", Body: toolMsg.Parts[0].Result,
+						Parts: mustJSON(toolMsg.Parts), ToolCallID: p.ToolCallID,
+					})
+					goto persistStream
+				}
+				if e.Policy != nil {
+					e.Policy.Audit("doom_loop_allow_once", "tool", p.ToolName, "session_id", sessionID)
+				}
+				sigWindow = sigWindow[:0]
 			}
 
 			result, isErr := e.executeTool(ctx, workspaceID, sessionID, p)
@@ -508,6 +607,14 @@ func (e *Engine) CompleteTurnStream(ctx context.Context, workspaceID, sessionID,
 		if e.Snapshot != nil {
 			_ = e.Snapshot.Patch(ctx, sessionID, stepID)
 		}
+		e.maybeSummarizeStep(ctx, sessionID, stepID, runProv, toolCalls, "")
+		e.publish("react.round.finish", map[string]any{
+			"session_id":      sessionID,
+			"round":           round + 1,
+			"step_id":         stepID,
+			"finish_reason":   resp.FinishReason,
+			"tool_call_count": len(toolCalls),
+		})
 	}
 
 persistStream:
@@ -537,16 +644,42 @@ persistStream:
 }
 
 func (e *Engine) executeTool(ctx context.Context, workspaceID, sessionID string, p llm.Part) (result string, isErr bool) {
+	permissionArg := inferPermissionArg(p.Args)
 	if e.Policy != nil {
-		perm := e.Policy.CheckPermission(p.ToolName)
+		perm := e.Policy.CheckPermissionWithArg(p.ToolName, permissionArg)
 		if perm == "deny" {
+			e.publish("react.blocked", map[string]any{
+				"session_id": sessionID,
+				"tool":       p.ToolName,
+				"source":     "policy",
+				"reason":     "deny",
+			})
+			e.Policy.Audit("tool_permission_deny", "tool", p.ToolName, "arg", permissionArg, "source", "policy")
 			return fmt.Sprintf("tool %q is denied by policy", p.ToolName), true
 		}
-		if perm == "ask" && e.Confirm != nil {
+		if perm == "ask" {
+			if e.Confirm == nil {
+				e.publish("react.blocked", map[string]any{
+					"session_id": sessionID,
+					"tool":       p.ToolName,
+					"source":     "policy",
+					"reason":     "ask_without_confirm",
+				})
+				e.Policy.Audit("tool_permission_reject", "tool", p.ToolName, "arg", permissionArg, "source", "policy", "reason", "no_confirm_handler")
+				return fmt.Sprintf("tool %q requires approval but no confirm handler is configured", p.ToolName), true
+			}
 			ok, err := e.Confirm(p.ToolName, p.Args)
 			if err != nil || !ok {
+				e.publish("react.blocked", map[string]any{
+					"session_id": sessionID,
+					"tool":       p.ToolName,
+					"source":     "policy",
+					"reason":     "ask_rejected",
+				})
+				e.Policy.Audit("tool_permission_reject", "tool", p.ToolName, "arg", permissionArg, "source", "policy")
 				return fmt.Sprintf("tool %q rejected by user", p.ToolName), true
 			}
+			e.Policy.Audit("tool_permission_allow_once", "tool", p.ToolName, "arg", permissionArg, "source", "policy")
 		}
 	}
 
@@ -554,15 +687,45 @@ func (e *Engine) executeTool(ctx context.Context, workspaceID, sessionID string,
 	if len(agent.Permission) > 0 {
 		action := permission.Evaluate(permission.ToolPermissionName(p.ToolName), "*", agent.Permission)
 		if action == permission.ActionDeny {
+			e.publish("react.blocked", map[string]any{
+				"session_id": sessionID,
+				"tool":       p.ToolName,
+				"source":     "agent",
+				"reason":     "deny",
+				"agent":      agent.Name,
+			})
+			if e.Policy != nil {
+				e.Policy.Audit("tool_permission_deny", "tool", p.ToolName, "arg", permissionArg, "source", "agent", "agent", agent.Name)
+			}
 			return fmt.Sprintf("tool %q is denied by agent %q permissions", p.ToolName, agent.Name), true
 		}
 		if action == permission.ActionAsk {
 			if e.Confirm != nil {
 				ok, err := e.Confirm(p.ToolName, p.Args)
 				if err != nil || !ok {
+					e.publish("react.blocked", map[string]any{
+						"session_id": sessionID,
+						"tool":       p.ToolName,
+						"source":     "agent",
+						"reason":     "ask_rejected",
+						"agent":      agent.Name,
+					})
+					if e.Policy != nil {
+						e.Policy.Audit("tool_permission_reject", "tool", p.ToolName, "arg", permissionArg, "source", "agent", "agent", agent.Name)
+					}
 					return fmt.Sprintf("tool %q rejected by user (agent %q requires approval)", p.ToolName, agent.Name), true
 				}
+				if e.Policy != nil {
+					e.Policy.Audit("tool_permission_allow_once", "tool", p.ToolName, "arg", permissionArg, "source", "agent", "agent", agent.Name)
+				}
 			} else {
+				e.publish("react.blocked", map[string]any{
+					"session_id": sessionID,
+					"tool":       p.ToolName,
+					"source":     "agent",
+					"reason":     "ask_without_confirm",
+					"agent":      agent.Name,
+				})
 				return fmt.Sprintf("tool %q requires approval but no confirm handler (agent %q)", p.ToolName, agent.Name), true
 			}
 		}
@@ -584,6 +747,90 @@ func (e *Engine) executeTool(ctx context.Context, workspaceID, sessionID string,
 		return err.Error(), true
 	}
 	return out, false
+}
+
+func (e *Engine) publish(event string, data map[string]any) {
+	if e.Bus != nil {
+		e.Bus.Publish(event, data)
+	}
+}
+
+func (e *Engine) compactNow(
+	ctx context.Context,
+	prov llm.Provider,
+	workspaceID, sessionID string,
+	msgs []llm.Message,
+	reason string,
+) ([]llm.Message, error) {
+	if e.Compaction == nil {
+		return nil, fmt.Errorf("compaction service is nil")
+	}
+	if prov == nil {
+		prov, _ = e.resolveProvider()
+	}
+	e.publish("react.compact.start", map[string]any{
+		"session_id": sessionID,
+		"reason":     reason,
+	})
+	compacted, err := e.Compaction.Process(ctx, prov, workspaceID, sessionID, msgs, 5)
+	if err != nil {
+		e.publish("react.compact.fail", map[string]any{
+			"session_id": sessionID,
+			"reason":     reason,
+			"error":      err.Error(),
+		})
+		return nil, err
+	}
+	e.publish("react.compact.success", map[string]any{
+		"session_id": sessionID,
+		"reason":     reason,
+	})
+	return compacted, nil
+}
+
+func (e *Engine) maybeSummarizeStep(
+	ctx context.Context,
+	sessionID, stepID string,
+	provider llm.Provider,
+	toolCalls []string,
+	fileDiff string,
+) {
+	if sessionID == "" {
+		return
+	}
+	var summary *tools.SessionSummary
+	if v, ok := e.summary.Load(sessionID); ok {
+		summary, _ = v.(*tools.SessionSummary)
+	}
+	if summary == nil {
+		summary = tools.NewSessionSummary()
+		e.summary.Store(sessionID, summary)
+	}
+	entry, err := summary.Summarize(ctx, provider, stepID, toolCalls, fileDiff)
+	if err != nil {
+		return
+	}
+	e.publish("session.summary", map[string]any{
+		"session_id": sessionID,
+		"step_id":    entry.StepID,
+		"summary":    entry.Summary,
+		"tool_calls": entry.ToolCalls,
+	})
+}
+
+func inferPermissionArg(args map[string]any) string {
+	if len(args) == 0 {
+		return ""
+	}
+	for _, key := range []string{"path", "target_directory", "working_directory", "file", "uri", "url", "command", "cmd"} {
+		if v, ok := args[key]; ok {
+			s := strings.TrimSpace(fmt.Sprint(v))
+			if s != "" && s != "<nil>" {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 func (e *Engine) callWithRetry(ctx context.Context, sessionID string, prov llm.Provider, model string, msgs []llm.Message, tdefs []llm.ToolDef) (*llm.Response, error) {
@@ -732,7 +979,7 @@ func (e *Engine) activeAgent(ctx context.Context, sessionID string) Agent {
 	return AgentBuild
 }
 
-func (e *Engine) collectToolsForAgent(agent Agent) []llm.ToolDef {
+func (e *Engine) collectToolsForAgent(agent Agent, model string) []llm.ToolDef {
 	var all []llm.ToolDef
 	if e.Tools != nil && e.Tools.Builtin != nil {
 		for _, t := range e.Tools.Builtin.List() {
@@ -758,12 +1005,35 @@ func (e *Engine) collectToolsForAgent(agent Agent) []llm.ToolDef {
 	}
 
 	filtered := ToolFilter(agent, all)
+	filtered = applyToolRoutingStrategy(filtered, model)
 
 	for i := range filtered {
 		delete(filtered[i].Parameters, "_tags")
 	}
 
 	return filtered
+}
+
+func applyToolRoutingStrategy(in []llm.ToolDef, model string) []llm.ToolDef {
+	if model == "" {
+		return in
+	}
+	m := strings.ToLower(model)
+	usePatch := strings.Contains(m, "gpt-5") || strings.Contains(m, "gpt-4.1") || strings.HasPrefix(m, "gpt-")
+	out := make([]llm.ToolDef, 0, len(in))
+	for _, t := range in {
+		if usePatch {
+			if t.Name == "edit" || t.Name == "write" || t.Name == "multiedit" {
+				continue
+			}
+		} else {
+			if t.Name == "apply_patch" {
+				continue
+			}
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 func (e *Engine) resolveProviderForAgent(agent Agent) (llm.Provider, string) {
@@ -875,7 +1145,7 @@ func (e *Engine) maybeCompact(ctx context.Context, prov llm.Provider, workspaceI
 
 	go func() {
 		bgCtx := context.Background()
-		compacted, cErr := e.Compaction.Process(bgCtx, prov, workspaceID, sessionID, msgs, 5)
+		compacted, cErr := e.compactNow(bgCtx, prov, workspaceID, sessionID, msgs, "background_threshold")
 		if cErr != nil {
 			if e.Log != nil {
 				e.Log.Error("maybeCompact_fail", "session_id", sessionID, "err", cErr)

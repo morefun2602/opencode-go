@@ -41,5 +41,5 @@
 - **代码**：`internal/runtime/engine.go` 重写；`internal/llm/provider.go` 接口 **BREAKING** 变更；`internal/store` 迁移至 schema v3；新增 `internal/llm/openai.go`、`internal/llm/anthropic.go`、`internal/mcp/stdio.go`、`internal/tool/edit.go` 等。
 - **依赖**：引入 `github.com/openai/openai-go`（OpenAI 官方 Go SDK）与 `github.com/anthropics/anthropic-sdk-go`（Anthropic 官方 Go SDK）。
 - **API**：`/v1/sessions/{id}/complete` 请求/响应格式变更（需版本协商或文档化 BREAKING）。
-- **配置**：新增 `x_opencode_go.providers`（API key、base URL）、`x_opencode_go.permissions` 等键。
+- **配置**：新增 `providers`（API key、base URL）、`permissions` 等键。
 - **测试**：需为 ReAct 循环、提供商集成（mock HTTP）、MCP stdio 补充集成测试。
